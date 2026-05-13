@@ -9,6 +9,7 @@ export default function ChatDashboard() {
   const { token, logout, chatHistory, addMessage, dbStatus } = useStore();
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState('chat');
   const messagesEndRef = useRef(null);
 
   useEffect(() => {
@@ -119,20 +120,20 @@ export default function ChatDashboard() {
 <p className="font-body-sm text-body-sm text-on-surface-variant mt-1">Enterprise Tier</p>
 </div>
 <nav className="flex-1 flex flex-col gap-2">
-<a className="flex items-center gap-3 px-4 py-3 rounded-full text-on-surface-variant hover:bg-surface-variant/50 transition-colors duration-200 active:scale-95 transition-transform" href="#">
-<span className="material-symbols-outlined text-label-mono">dashboard</span>
+<a onClick={(e) => { e.preventDefault(); setActiveTab('analytics'); }} className={`flex items-center gap-3 px-4 py-3 rounded-full transition-colors duration-200 active:scale-95 transition-transform ${activeTab === 'analytics' ? 'bg-secondary-container text-on-secondary-container font-medium' : 'text-on-surface-variant hover:bg-surface-variant/50'}`} href="#">
+<span className="material-symbols-outlined text-label-mono" style={{fontVariationSettings: activeTab === 'analytics' ? "'FILL' 1" : "'FILL' 0"}}>dashboard</span>
 <span className="font-body-lg text-body-lg">Analytics</span>
 </a>
-<a className="flex items-center gap-3 px-4 py-3 rounded-full bg-secondary-container text-on-secondary-container font-medium hover:bg-surface-variant/50 transition-colors duration-200 active:scale-95 transition-transform" href="#">
-<span className="material-symbols-outlined text-label-mono" style={{fontVariationSettings: "'FILL' 1"}}>terminal</span>
+<a onClick={(e) => { e.preventDefault(); setActiveTab('chat'); }} className={`flex items-center gap-3 px-4 py-3 rounded-full transition-colors duration-200 active:scale-95 transition-transform ${activeTab === 'chat' ? 'bg-secondary-container text-on-secondary-container font-medium' : 'text-on-surface-variant hover:bg-surface-variant/50'}`} href="#">
+<span className="material-symbols-outlined text-label-mono" style={{fontVariationSettings: activeTab === 'chat' ? "'FILL' 1" : "'FILL' 0"}}>terminal</span>
 <span className="font-body-lg text-body-lg">SQL Chat</span>
 </a>
-<a className="flex items-center gap-3 px-4 py-3 rounded-full text-on-surface-variant hover:bg-surface-variant/50 transition-colors duration-200 active:scale-95 transition-transform" href="#">
-<span className="material-symbols-outlined text-label-mono">database</span>
+<a onClick={(e) => { e.preventDefault(); setActiveTab('databases'); }} className={`flex items-center gap-3 px-4 py-3 rounded-full transition-colors duration-200 active:scale-95 transition-transform ${activeTab === 'databases' ? 'bg-secondary-container text-on-secondary-container font-medium' : 'text-on-surface-variant hover:bg-surface-variant/50'}`} href="#">
+<span className="material-symbols-outlined text-label-mono" style={{fontVariationSettings: activeTab === 'databases' ? "'FILL' 1" : "'FILL' 0"}}>database</span>
 <span className="font-body-lg text-body-lg">Databases</span>
 </a>
-<a className="flex items-center gap-3 px-4 py-3 rounded-full text-on-surface-variant hover:bg-surface-variant/50 transition-colors duration-200 active:scale-95 transition-transform" href="#">
-<span className="material-symbols-outlined text-label-mono">history</span>
+<a onClick={(e) => { e.preventDefault(); setActiveTab('history'); }} className={`flex items-center gap-3 px-4 py-3 rounded-full transition-colors duration-200 active:scale-95 transition-transform ${activeTab === 'history' ? 'bg-secondary-container text-on-secondary-container font-medium' : 'text-on-surface-variant hover:bg-surface-variant/50'}`} href="#">
+<span className="material-symbols-outlined text-label-mono" style={{fontVariationSettings: activeTab === 'history' ? "'FILL' 1" : "'FILL' 0"}}>history</span>
 <span className="font-body-lg text-body-lg">History</span>
 </a>
 </nav>
@@ -186,91 +187,141 @@ export default function ChatDashboard() {
 </header>
         <main className="flex-1 mt-16 overflow-y-auto pb-32 scroll-smooth">
             <div className="max-w-[1000px] mx-auto w-full px-gutter pt-8 flex flex-col gap-8">
-                {chatHistory.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center mt-20 text-on-surface-variant/50">
-                        <span className="material-symbols-outlined text-[64px] mb-4 text-primary/30">neurology</span>
-                        <p className="font-body-lg text-body-lg text-on-surface">Ask me anything about your data.</p>
-                        <p className="font-body-sm text-body-sm mt-2">Example: "Show me the top 5 customers by revenue"</p>
-                    </div>
-                ) : (
-                    chatHistory.map((msg, idx) => (
-                        <div key={idx}>
-                            {msg.role === 'user' ? (
-                                <div className="flex justify-end mb-8">
-                                    <div className="bg-surface-container-highest text-on-surface px-6 py-4 rounded-2xl rounded-tr-sm max-w-[80%] border border-white/5 shadow-lg">
-                                        <p className="font-body-lg text-body-lg">{msg.content}</p>
-                                    </div>
-                                </div>
-                            ) : (
-                                <div className="flex items-start gap-4 max-w-[90%] mb-8">
-                                    <div className="w-10 h-10 rounded-xl bg-primary-container/20 flex items-center justify-center border border-primary/20 shrink-0">
-                                        <span className="material-symbols-outlined text-primary" style={{fontVariationSettings: "'FILL' 1"}}>neurology</span>
-                                    </div>
-                                    <div className="flex flex-col gap-4 w-full">
-                                        <div className="text-on-surface font-body-lg text-body-lg pt-2 whitespace-pre-wrap">
-                                            {msg.content}
-                                        </div>
-                                        {msg.sql && (
-                                            <div className="bg-[#0f1526] rounded-xl border border-white/10 overflow-hidden flex flex-col shadow-xl mt-2">
-                                                <div className="flex items-center justify-between px-4 py-2 border-b border-white/5 bg-surface-container/50">
-                                                    <div className="flex items-center gap-2">
-                                                        <span className="material-symbols-outlined text-outline text-label-mono text-[16px]">code</span>
-                                                        <span className="font-label-mono text-label-mono text-outline">Executed SQL</span>
-                                                    </div>
-                                                </div>
-                                                <div className="p-4 font-label-mono text-label-mono text-secondary/90 leading-relaxed overflow-x-auto">
-                                                    <pre><code>{msg.sql}</code></pre>
-                                                </div>
+                {activeTab === 'chat' && (
+                    <>
+                        {chatHistory.length === 0 ? (
+                            <div className="flex flex-col items-center justify-center mt-20 text-on-surface-variant/50">
+                                <span className="material-symbols-outlined text-[64px] mb-4 text-primary/30">neurology</span>
+                                <p className="font-body-lg text-body-lg text-on-surface">Ask me anything about your data.</p>
+                                <p className="font-body-sm text-body-sm mt-2">Example: "Show me the top 5 customers by revenue"</p>
+                            </div>
+                        ) : (
+                            chatHistory.map((msg, idx) => (
+                                <div key={idx}>
+                                    {msg.role === 'user' ? (
+                                        <div className="flex justify-end mb-8">
+                                            <div className="bg-surface-container-highest text-on-surface px-6 py-4 rounded-2xl rounded-tr-sm max-w-[80%] border border-white/5 shadow-lg">
+                                                <p className="font-body-lg text-body-lg">{msg.content}</p>
                                             </div>
-                                        )}
-                                        {msg.data && renderTable(msg.data)}
-                                        {msg.data && renderChart(msg.data)}
-                                    </div>
+                                        </div>
+                                    ) : (
+                                        <div className="flex items-start gap-4 max-w-[90%] mb-8">
+                                            <div className="w-10 h-10 rounded-xl bg-primary-container/20 flex items-center justify-center border border-primary/20 shrink-0">
+                                                <span className="material-symbols-outlined text-primary" style={{fontVariationSettings: "'FILL' 1"}}>neurology</span>
+                                            </div>
+                                            <div className="flex flex-col gap-4 w-full">
+                                                <div className="text-on-surface font-body-lg text-body-lg pt-2 whitespace-pre-wrap">
+                                                    {msg.content}
+                                                </div>
+                                                {msg.sql && (
+                                                    <div className="bg-[#0f1526] rounded-xl border border-white/10 overflow-hidden flex flex-col shadow-xl mt-2">
+                                                        <div className="flex items-center justify-between px-4 py-2 border-b border-white/5 bg-surface-container/50">
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="material-symbols-outlined text-outline text-label-mono text-[16px]">code</span>
+                                                                <span className="font-label-mono text-label-mono text-outline">Executed SQL</span>
+                                                            </div>
+                                                        </div>
+                                                        <div className="p-4 font-label-mono text-label-mono text-secondary/90 leading-relaxed overflow-x-auto">
+                                                            <pre><code>{msg.sql}</code></pre>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                                {msg.data && renderTable(msg.data)}
+                                                {msg.data && renderChart(msg.data)}
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
-                            )}
-                        </div>
-                    ))
+                            ))
+                        )}
+                        
+                        {loading && (
+                            <div className="flex items-start gap-4 max-w-[90%]">
+                                <div className="w-10 h-10 rounded-xl bg-primary-container/20 flex items-center justify-center border border-primary/20 shrink-0">
+                                    <span className="material-symbols-outlined text-primary" style={{fontVariationSettings: "'FILL' 1"}}>neurology</span>
+                                </div>
+                                <div className="flex items-center gap-2 h-10 px-4 bg-surface-container-low/60 backdrop-blur-md rounded-xl border border-white/5 w-fit">
+                                    <span className="w-2 h-2 rounded-full bg-primary/60 animate-bounce"></span>
+                                    <span className="w-2 h-2 rounded-full bg-primary/60 animate-bounce" style={{animationDelay: '0.2s'}}></span>
+                                    <span className="w-2 h-2 rounded-full bg-primary/60 animate-bounce" style={{animationDelay: '0.4s'}}></span>
+                                </div>
+                            </div>
+                        )}
+                        <div ref={messagesEndRef} />
+                    </>
                 )}
-                
-                {loading && (
-                    <div className="flex items-start gap-4 max-w-[90%]">
-                        <div className="w-10 h-10 rounded-xl bg-primary-container/20 flex items-center justify-center border border-primary/20 shrink-0">
-                            <span className="material-symbols-outlined text-primary" style={{fontVariationSettings: "'FILL' 1"}}>neurology</span>
-                        </div>
-                        <div className="flex items-center gap-2 h-10 px-4 bg-surface-container-low/60 backdrop-blur-md rounded-xl border border-white/5 w-fit">
-                            <span className="w-2 h-2 rounded-full bg-primary/60 animate-bounce"></span>
-                            <span className="w-2 h-2 rounded-full bg-primary/60 animate-bounce" style={{animationDelay: '0.2s'}}></span>
-                            <span className="w-2 h-2 rounded-full bg-primary/60 animate-bounce" style={{animationDelay: '0.4s'}}></span>
+
+                {activeTab === 'analytics' && (
+                    <div className="flex flex-col items-center justify-center mt-20 text-on-surface-variant/50">
+                        <span className="material-symbols-outlined text-[64px] mb-4 text-primary/30">dashboard</span>
+                        <p className="font-body-lg text-body-lg text-on-surface">Analytics Dashboard</p>
+                        <p className="font-body-sm text-body-sm mt-2">Visual reports and insights will appear here.</p>
+                    </div>
+                )}
+                {activeTab === 'databases' && (
+                    <div className="flex flex-col items-center justify-center mt-20 text-on-surface-variant/50">
+                        <span className="material-symbols-outlined text-[64px] mb-4 text-primary/30">database</span>
+                        <p className="font-body-lg text-body-lg text-on-surface">Connected Databases</p>
+                        <p className="font-body-sm text-body-sm mt-2">Manage your data sources here.</p>
+                        <div className="mt-8 w-full max-w-md bg-surface-container-low/60 backdrop-blur-md rounded-xl border border-white/5 p-4 flex items-center gap-4">
+                            <span className="material-symbols-outlined text-secondary text-3xl">database</span>
+                            <div className="flex-1">
+                                <h3 className="text-body-lg font-medium text-on-surface">Analytics_DB</h3>
+                                <p className="text-body-sm text-on-surface-variant">Connected</p>
+                            </div>
+                            <span className="w-3 h-3 rounded-full bg-secondary shadow-[0_0_8px_rgba(137,206,255,0.8)]"></span>
                         </div>
                     </div>
                 )}
-                <div ref={messagesEndRef} />
+                {activeTab === 'history' && (
+                    <div className="flex flex-col mt-4">
+                        <h2 className="font-display text-headline-sm font-bold text-primary mb-6">Query History</h2>
+                        {chatHistory.filter(msg => msg.role === 'user').length > 0 ? (
+                            <div className="flex flex-col gap-4">
+                                {chatHistory.filter(msg => msg.role === 'user').map((msg, idx) => (
+                                    <div key={idx} className="bg-surface-container-low/60 backdrop-blur-md rounded-xl border border-white/5 p-4 flex items-center gap-4">
+                                        <span className="material-symbols-outlined text-on-surface-variant">history</span>
+                                        <p className="font-body-lg text-on-surface flex-1">{msg.content}</p>
+                                    </div>
+                                ))}
+                            </div>
+                        ) : (
+                            <div className="flex flex-col items-center justify-center mt-12 text-on-surface-variant/50">
+                                <span className="material-symbols-outlined text-[64px] mb-4 text-primary/30">history</span>
+                                <p className="font-body-lg text-body-lg text-on-surface">No history yet</p>
+                                <p className="font-body-sm text-body-sm mt-2">Your past queries will appear here.</p>
+                            </div>
+                        )}
+                    </div>
+                )}
             </div>
         </main>
         
-        <div className="absolute bottom-0 left-0 w-full px-margin-desktop pb-8 pt-12 bg-gradient-to-t from-background via-background/95 to-transparent pointer-events-none">
-            <div className="max-w-[1000px] mx-auto pointer-events-auto">
-                <form onSubmit={handleSend} className="bg-surface-container-highest/80 backdrop-blur-xl border border-white/10 rounded-full flex items-center p-2 shadow-[0_8px_32px_rgba(0,0,0,0.4)] ring-1 ring-primary/5 focus-within:ring-primary/30 transition-all">
-                    <button type="button" className="w-10 h-10 flex items-center justify-center text-outline hover:text-primary transition-colors shrink-0">
-                        <span className="material-symbols-outlined">add_circle</span>
-                    </button>
-                    <input 
-                        type="text" 
-                        value={input} 
-                        onChange={(e) => setInput(e.target.value)} 
-                        disabled={loading}
-                        className="bg-transparent border-none focus:ring-0 text-on-surface font-body-lg text-body-lg placeholder-outline w-full px-2" 
-                        placeholder="Ask anything about your data..." 
-                    />
-                    <button type="submit" disabled={loading || !input.trim()} className="w-10 h-10 rounded-full bg-primary flex items-center justify-center text-on-primary hover:bg-primary/90 transition-colors shrink-0 shadow-[0_0_15px_rgba(173,198,255,0.3)] disabled:opacity-50">
-                        <span className="material-symbols-outlined" style={{fontVariationSettings: "'FILL' 1", fontSize: "20px"}}>send</span>
-                    </button>
-                </form>
-                <div className="text-center mt-3">
-                    <span className="font-label-mono text-label-mono text-on-surface-variant/60">QueryTalk AI can make mistakes. Consider verifying critical data.</span>
+        {activeTab === 'chat' && (
+            <div className="absolute bottom-0 left-0 w-full px-margin-desktop pb-8 pt-12 bg-gradient-to-t from-background via-background/95 to-transparent pointer-events-none">
+                <div className="max-w-[1000px] mx-auto pointer-events-auto">
+                    <form onSubmit={handleSend} className="bg-surface-container-highest/80 backdrop-blur-xl border border-white/10 rounded-full flex items-center p-2 shadow-[0_8px_32px_rgba(0,0,0,0.4)] ring-1 ring-primary/5 focus-within:ring-primary/30 transition-all">
+                        <button type="button" className="w-10 h-10 flex items-center justify-center text-outline hover:text-primary transition-colors shrink-0">
+                            <span className="material-symbols-outlined">add_circle</span>
+                        </button>
+                        <input 
+                            type="text" 
+                            value={input} 
+                            onChange={(e) => setInput(e.target.value)} 
+                            disabled={loading}
+                            className="bg-transparent border-none focus:ring-0 text-on-surface font-body-lg text-body-lg placeholder-outline w-full px-2" 
+                            placeholder="Ask anything about your data..." 
+                        />
+                        <button type="submit" disabled={loading || !input.trim()} className="w-10 h-10 rounded-full bg-primary flex items-center justify-center text-on-primary hover:bg-primary/90 transition-colors shrink-0 shadow-[0_0_15px_rgba(173,198,255,0.3)] disabled:opacity-50">
+                            <span className="material-symbols-outlined" style={{fontVariationSettings: "'FILL' 1", fontSize: "20px"}}>send</span>
+                        </button>
+                    </form>
+                    <div className="text-center mt-3">
+                        <span className="font-label-mono text-label-mono text-on-surface-variant/60">QueryTalk AI can make mistakes. Consider verifying critical data.</span>
+                    </div>
                 </div>
             </div>
-        </div>
+        )}
       </div>
     </div>
   );

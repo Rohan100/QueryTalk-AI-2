@@ -1,8 +1,20 @@
 import os
 from langchain_anthropic import ChatAnthropic
-from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langchain.memory import ConversationBufferWindowMemory
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_core.messages import HumanMessage, AIMessage
+from collections import deque
 from pydantic import BaseModel, Field
+
+class SimpleMemory:
+    def __init__(self, k=10):
+        self.messages = deque(maxlen=k * 2)
+
+    def load_memory_variables(self, _):
+        return {"history": list(self.messages)}
+
+    def save_context(self, inputs, outputs):
+        self.messages.append(HumanMessage(content=inputs.get("input", "")))
+        self.messages.append(AIMessage(content=outputs.get("output", "")))
 
 class LLMOrchestrator:
     def __init__(self):
@@ -17,7 +29,7 @@ class LLMOrchestrator:
             self.llm = ChatAnthropic(model_name=model_name, anthropic_api_key=api_key, temperature=0)
 
         # Buffer memory for last 10 messages
-        self.memory = ConversationBufferWindowMemory(k=10, return_messages=True)
+        self.memory = SimpleMemory(k=10)
 
     def generate_sql(self, user_query: str, schema_info: str) -> str:
         if not self.llm:
