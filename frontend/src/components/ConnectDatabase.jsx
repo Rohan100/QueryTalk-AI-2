@@ -1,11 +1,13 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '@clerk/react';
 import useStore from '../store';
 import axios from 'axios';
 
 export default function ConnectDatabase() {
   const navigate = useNavigate();
-  const { setDbStatus, setDbName, token } = useStore();
+  const { getToken } = useAuth();
+  const { setDbStatus, setDbName } = useStore();
   
   const [dbType, setDbType] = useState('sqlite');
   const [host, setHost] = useState('');
@@ -34,8 +36,9 @@ export default function ConnectDatabase() {
     setSchemaPreview(null);
     setLoading(true);
     try {
+      const clerkToken = await getToken();
       const res = await axios.post('/api/db/test', getPayload(), {
-        headers: { Authorization: `Bearer ${token}` }
+        headers: { Authorization: `Bearer ${clerkToken}` }
       });
       setSchemaPreview(res.data.schema);
     } catch (err) {
@@ -50,8 +53,9 @@ export default function ConnectDatabase() {
     setError('');
     setLoading(true);
     try {
+      const clerkToken = await getToken();
       await axios.post('/api/db/connect', getPayload(), {
-        headers: { Authorization: `Bearer ${token}` }
+        headers: { Authorization: `Bearer ${clerkToken}` }
       });
       setDbStatus('connected');
       setDbName(dbNameLocal || 'demo.db');

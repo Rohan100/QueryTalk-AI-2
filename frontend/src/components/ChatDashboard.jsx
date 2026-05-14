@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useAuth, useClerk } from '@clerk/react';
 import useStore from '../store';
 import axios from 'axios';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
@@ -7,7 +8,9 @@ import AnalyticsDashboard from './AnalyticsDashboard';
 
 export default function ChatDashboard() {
   const navigate = useNavigate();
-  const { token, logout, chats, activeChatId, addMessage, createNewChat, setActiveChatId, dbStatus, dbName, apiKey, setApiKey } = useStore();
+  const { getToken } = useAuth();
+  const { signOut } = useClerk();
+  const { chats, activeChatId, addMessage, createNewChat, setActiveChatId, dbStatus, dbName, apiKey, setApiKey } = useStore();
   const [schemaData, setSchemaData] = useState('');
   const [loadingSchema, setLoadingSchema] = useState(false);
   const activeChat = chats.find(c => c.id === activeChatId) || chats[0];
@@ -36,10 +39,11 @@ export default function ChatDashboard() {
     setLoading(true);
 
     try {
+      const clerkToken = await getToken();
       const res = await axios.post(
         '/api/chat/',
         { message: userMsg },
-        { headers: { Authorization: `Bearer ${token}`, 'X-API-Key': apiKey || '' } }
+        { headers: { Authorization: `Bearer ${clerkToken}`, 'X-API-Key': apiKey || '' } }
       );
       addMessage({
         role: 'assistant',
@@ -60,7 +64,8 @@ export default function ChatDashboard() {
       const fetchSchema = async () => {
         setLoadingSchema(true);
         try {
-          const res = await axios.get('/api/db/schema', { headers: { Authorization: `Bearer ${token}` }});
+          const clerkToken = await getToken();
+          const res = await axios.get('/api/db/schema', { headers: { Authorization: `Bearer ${clerkToken}` }});
           setSchemaData(res.data.schema);
         } catch(e) {
           console.error(e);
@@ -71,11 +76,11 @@ export default function ChatDashboard() {
       };
       fetchSchema();
     }
-  }, [activeTab, dbStatus, token]);
+  }, [activeTab, dbStatus, getToken]);
 
-  const handleLogout = () => {
-    logout();
-    navigate('/login');
+  const handleLogout = async () => {
+    await signOut();
+    navigate('/sign-in');
   };
 
   const renderChart = (data) => {
