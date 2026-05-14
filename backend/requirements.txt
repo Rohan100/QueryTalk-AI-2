@@ -1,8 +1,14 @@
 fastapi
 uvicorn
 sqlalchemy
+alembic
+psycopg2-binary
 langchain
 langchain-anthropic
 PyJWT
+python-jose[cryptography]
+cryptography
+httpx
 pydantic
 python-dotenv
+pymysql

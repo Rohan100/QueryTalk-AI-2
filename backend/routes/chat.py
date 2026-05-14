@@ -3,7 +3,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from core.database import get_db, get_schema_info
-from core.security import verify_token, is_safe_query
+from core.security import is_safe_query
 from services.llm_orchestrator import llm_orchestrator
 
 router = APIRouter()
@@ -12,7 +12,7 @@ class ChatRequest(BaseModel):
     message: str
 
 @router.post("/")
-def chat_endpoint(request: Request, chat_req: ChatRequest, db: Session = Depends(get_db), current_user: dict = Depends(verify_token)):
+def chat_endpoint(request: Request, chat_req: ChatRequest, db: Session = Depends(get_db)):
     user_query = chat_req.message
     
     schema_info = get_schema_info()
