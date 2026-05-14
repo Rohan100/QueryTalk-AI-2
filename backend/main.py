@@ -1,6 +1,9 @@
+import warnings
+warnings.filterwarnings("ignore", message=".*Core Pydantic V1 functionality isn't compatible with Python 3.14 or greater.*")
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from routes import auth, chat
+from routes import auth, chat, database
 from core.database import init_db
 
 app = FastAPI(title="QueryTalk AI Backend")
@@ -19,6 +22,7 @@ def on_startup():
 
 app.include_router(auth.router, prefix="/api/auth", tags=["Auth"])
 app.include_router(chat.router, prefix="/api/chat", tags=["Chat"])
+app.include_router(database.router, prefix="/api/db", tags=["Database"])
 
 @app.get("/")
 def read_root():

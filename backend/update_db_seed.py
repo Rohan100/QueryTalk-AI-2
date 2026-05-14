@@ -1,30 +1,13 @@
-import os
-from sqlalchemy import create_engine, MetaData
-from sqlalchemy.orm import declarative_base, sessionmaker
+import re
 
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./demo_v2.db")
+with open('core/database.py', 'r') as f:
+    content = f.read()
 
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False} if "sqlite" in DATABASE_URL else {})
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-Base = declarative_base()
+# Replace demo.db with demo_v2.db
+content = content.replace('"sqlite:///./demo.db"', '"sqlite:///./demo_v2.db"')
 
-def set_engine(database_url: str):
-    global engine, SessionLocal, DATABASE_URL
-    DATABASE_URL = database_url
-    engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False} if "sqlite" in DATABASE_URL else {})
-    SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-def test_engine(database_url: str) -> str:
-    temp_engine = create_engine(database_url, connect_args={"check_same_thread": False} if "sqlite" in database_url else {})
-    metadata = MetaData()
-    metadata.reflect(bind=temp_engine)
-    schema_details = []
-    for table_name, table in metadata.tables.items():
-        columns = [f"{col.name} ({col.type})" for col in table.columns]
-        schema_details.append(f"Table: {table_name}\nColumns: {', '.join(columns)}")
-    return "\n\n".join(schema_details)
-
-def init_db():
+# Update init_db
+new_init_db = """def init_db():
     if "sqlite" in str(engine.url):
         from sqlalchemy import Column, Integer, String, Float, Date, ForeignKey
         import datetime
@@ -82,19 +65,11 @@ def init_db():
             session.add_all(sales_to_add)
             session.commit()
         session.close()
+"""
 
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+# Find and replace the init_db block
+content = re.sub(r'def init_db\(\):[\s\S]*?def get_db\(\):', new_init_db + '\ndef get_db():', content)
 
-def get_schema_info():
-    metadata = MetaData()
-    metadata.reflect(bind=engine)
-    schema_details = []
-    for table_name, table in metadata.tables.items():
-        columns = [f"{col.name} ({col.type})" for col in table.columns]
-        schema_details.append(f"Table: {table_name}\nColumns: {', '.join(columns)}")
-    return "\n\n".join(schema_details)
+with open('core/database.py', 'w') as f:
+    f.write(content)
+print("Updated database.py")

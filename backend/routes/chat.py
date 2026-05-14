@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from sqlalchemy import text
@@ -12,13 +12,14 @@ class ChatRequest(BaseModel):
     message: str
 
 @router.post("/")
-def chat_endpoint(request: ChatRequest, db: Session = Depends(get_db), current_user: dict = Depends(verify_token)):
-    user_query = request.message
+def chat_endpoint(request: Request, chat_req: ChatRequest, db: Session = Depends(get_db), current_user: dict = Depends(verify_token)):
+    user_query = chat_req.message
     
     schema_info = get_schema_info()
     
     try:
-        sql_query = llm_orchestrator.generate_sql(user_query, schema_info)
+        api_key = request.headers.get("X-API-Key")
+        sql_query = llm_orchestrator.generate_sql(user_query, schema_info, api_key)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"LLM Generation Error: {str(e)}")
 
@@ -42,7 +43,8 @@ def chat_endpoint(request: ChatRequest, db: Session = Depends(get_db), current_u
         }
 
     try:
-        summary = llm_orchestrator.summarize_results(user_query, sql_query, data[:10])
+        api_key = request.headers.get("X-API-Key")
+        summary = llm_orchestrator.summarize_results(user_query, sql_query, data[:10], api_key)
     except Exception as e:
         summary = "Could not generate summary due to LLM error."
 

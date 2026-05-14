@@ -1,17 +1,65 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import useStore from '../store';
+import axios from 'axios';
 
 export default function ConnectDatabase() {
   const navigate = useNavigate();
-  const setDbStatus = useStore((state) => state.setDbStatus);
+  const { setDbStatus, setDbName, token } = useStore();
+  
   const [dbType, setDbType] = useState('sqlite');
-  const [connectionString, setConnectionString] = useState('');
+  const [host, setHost] = useState('');
+  const [port, setPort] = useState('');
+  const [dbNameLocal, setDbNameLocal] = useState('');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [useSSL, setUseSSL] = useState(false);
+  
+  const [schemaPreview, setSchemaPreview] = useState(null);
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const handleConnect = (e) => {
+  const getPayload = () => ({
+    db_type: dbType,
+    host: host || undefined,
+    port: port ? parseInt(port) : undefined,
+    db_name: dbNameLocal,
+    username: username || undefined,
+    password: password || undefined
+  });
+
+  const handleTest = async () => {
+    setError('');
+    setSchemaPreview(null);
+    setLoading(true);
+    try {
+      const res = await axios.post('/api/db/test', getPayload(), {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setSchemaPreview(res.data.schema);
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Connection test failed.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleConnect = async (e) => {
     e.preventDefault();
-    setDbStatus('connected');
-    navigate('/');
+    setError('');
+    setLoading(true);
+    try {
+      await axios.post('/api/db/connect', getPayload(), {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setDbStatus('connected');
+      setDbName(dbNameLocal || 'demo.db');
+      navigate('/');
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Connection failed.');
+      setLoading(false);
+    }
   };
 
   return (
@@ -49,7 +97,7 @@ export default function ConnectDatabase() {
                 <h2 className="font-headline-md text-headline-md text-primary tracking-tight mb-1">Connect DB</h2>
                 <p className="font-body-sm text-body-sm text-on-surface-variant">Configure your database connection parameters securely.</p>
               </div>
-              <button aria-label="Close Modal" className="text-on-surface-variant hover:text-white transition-colors">
+              <button type="button" onClick={() => navigate('/')} aria-label="Close Modal" className="text-on-surface-variant hover:text-white transition-colors">
                 <span className="material-symbols-outlined" style={{fontVariationSettings: "'FILL' 1"}}>close</span>
               </button>
             </div>
@@ -79,34 +127,34 @@ export default function ConnectDatabase() {
                   {/* Host */}
                   <div className="flex flex-col gap-2 col-span-2 sm:col-span-1">
                     <label className="font-label-mono text-label-mono text-on-surface-variant uppercase tracking-wider">Host</label>
-                    <input className="w-full glass-input rounded-lg px-4 py-3 font-body-sm text-body-sm text-on-surface placeholder:text-outline focus:ring-0" placeholder="e.g., db.internal.net" type="text" />
+                    <input className="w-full glass-input rounded-lg px-4 py-3 font-body-sm text-body-sm text-on-surface placeholder:text-outline focus:ring-0" placeholder="e.g., db.internal.net" type="text" value={host} onChange={e=>setHost(e.target.value)} />
                   </div>
                   {/* Port */}
                   <div className="flex flex-col gap-2 col-span-2 sm:col-span-1">
                     <label className="font-label-mono text-label-mono text-on-surface-variant uppercase tracking-wider">Port</label>
-                    <input className="w-full glass-input rounded-lg px-4 py-3 font-body-sm text-body-sm text-on-surface placeholder:text-outline focus:ring-0" placeholder="5432" type="number" />
+                    <input className="w-full glass-input rounded-lg px-4 py-3 font-body-sm text-body-sm text-on-surface placeholder:text-outline focus:ring-0" placeholder="5432" type="number" value={port} onChange={e=>setPort(e.target.value)} />
                   </div>
                 </div>
                 
                 {/* Database Name */}
                 <div className="flex flex-col gap-2">
                   <label className="font-label-mono text-label-mono text-on-surface-variant uppercase tracking-wider">Database Name</label>
-                  <input className="w-full glass-input rounded-lg px-4 py-3 font-body-sm text-body-sm text-on-surface placeholder:text-outline focus:ring-0" placeholder="production_db" type="text" />
+                  <input className="w-full glass-input rounded-lg px-4 py-3 font-body-sm text-body-sm text-on-surface placeholder:text-outline focus:ring-0" placeholder="production_db" type="text" value={dbNameLocal} onChange={e=>setDbNameLocal(e.target.value)} />
                 </div>
                 
                 <div className="grid grid-cols-2 gap-6">
                   {/* Username */}
                   <div className="flex flex-col gap-2 col-span-2 sm:col-span-1">
                     <label className="font-label-mono text-label-mono text-on-surface-variant uppercase tracking-wider">Username</label>
-                    <input className="w-full glass-input rounded-lg px-4 py-3 font-body-sm text-body-sm text-on-surface placeholder:text-outline focus:ring-0" placeholder="admin_user" type="text" />
+                    <input className="w-full glass-input rounded-lg px-4 py-3 font-body-sm text-body-sm text-on-surface placeholder:text-outline focus:ring-0" placeholder="admin_user" type="text" value={username} onChange={e=>setUsername(e.target.value)} />
                   </div>
                   {/* Password */}
                   <div className="flex flex-col gap-2 col-span-2 sm:col-span-1">
                     <label className="font-label-mono text-label-mono text-on-surface-variant uppercase tracking-wider">Password</label>
                     <div className="relative">
-                      <input className="w-full glass-input rounded-lg px-4 py-3 font-body-sm text-body-sm text-on-surface placeholder:text-outline focus:ring-0" placeholder="••••••••" type="password" />
-                      <button className="absolute right-4 top-1/2 -translate-y-1/2 text-on-surface-variant hover:text-white transition-colors" type="button">
-                        <span className="material-symbols-outlined text-[18px]">visibility_off</span>
+                      <input className="w-full glass-input rounded-lg px-4 py-3 font-body-sm text-body-sm text-on-surface placeholder:text-outline focus:ring-0" placeholder="••••••••" type={showPassword ? "text" : "password"} value={password} onChange={e=>setPassword(e.target.value)} />
+                      <button onClick={() => setShowPassword(!showPassword)} className="absolute right-4 top-1/2 -translate-y-1/2 text-on-surface-variant hover:text-white transition-colors" type="button">
+                        <span className="material-symbols-outlined text-[18px]">{showPassword ? "visibility" : "visibility_off"}</span>
                       </button>
                     </div>
                   </div>
@@ -114,8 +162,8 @@ export default function ConnectDatabase() {
                 
                 {/* SSL Toggle */}
                 <div className="flex items-center gap-3 mt-2">
-                  <button className="w-10 h-5 bg-primary/20 rounded-full relative transition-colors focus:outline-none focus:ring-2 focus:ring-primary/50" type="button">
-                    <span className="absolute left-1 top-1 w-3 h-3 bg-primary rounded-full transition-transform translate-x-5"></span>
+                  <button onClick={() => setUseSSL(!useSSL)} className={`w-10 h-5 rounded-full relative transition-colors focus:outline-none focus:ring-2 focus:ring-primary/50 ${useSSL ? 'bg-primary' : 'bg-primary/20'}`} type="button">
+                    <span className={`absolute left-1 top-1 w-3 h-3 bg-white rounded-full transition-transform ${useSSL ? 'translate-x-5' : 'translate-x-0'}`}></span>
                   </button>
                   <span className="font-body-sm text-body-sm text-on-surface-variant">Require SSL/TLS connection</span>
                 </div>
@@ -124,15 +172,16 @@ export default function ConnectDatabase() {
             
             {/* Action Footer */}
             <div className="px-8 py-5 border-t border-white/5 flex items-center justify-between bg-[rgba(21,27,45,0.3)]">
-              <button className="px-5 py-2.5 rounded-lg border border-white/10 text-on-surface font-medium hover:bg-white/5 transition-all flex items-center gap-2 group">
-                <span className="material-symbols-outlined text-[18px] text-outline group-hover:text-primary transition-colors">sync</span>
+              <button type="button" onClick={handleTest} disabled={loading} className="px-5 py-2.5 rounded-lg border border-white/10 text-on-surface font-medium hover:bg-white/5 transition-all flex items-center gap-2 group">
+                <span className={`material-symbols-outlined text-[18px] text-outline group-hover:text-primary transition-colors ${loading ? 'animate-spin' : ''}`}>sync</span>
                 Test Connection
               </button>
               <div className="flex gap-3">
-                <button className="px-5 py-2.5 rounded-lg text-on-surface-variant font-medium hover:text-white transition-colors">Cancel</button>
+                <button type="button" onClick={() => navigate('/')} className="px-5 py-2.5 rounded-lg text-on-surface-variant font-medium hover:text-white transition-colors">Cancel</button>
                 <button 
                   onClick={handleConnect}
-                  className="px-6 py-2.5 bg-[#005ac2] hover:bg-[#4d8eff] text-white rounded-lg font-medium shadow-lg shadow-primary/20 transition-all flex items-center gap-2"
+                  disabled={loading}
+                  className="px-6 py-2.5 bg-[#005ac2] hover:bg-[#4d8eff] text-white rounded-lg font-medium shadow-lg shadow-primary/20 transition-all flex items-center gap-2 disabled:opacity-50"
                 >
                   Connect
                   <span className="material-symbols-outlined text-[18px]">arrow_forward</span>
@@ -150,30 +199,50 @@ export default function ConnectDatabase() {
               <h3 className="font-headline-md text-body-lg font-medium text-on-surface">Schema Preview</h3>
             </div>
             
-            {/* Preview Content State (Empty/Awaiting Connection) */}
-            <div className="flex-1 flex flex-col items-center justify-center p-8 text-center relative z-10">
-              <div className="w-24 h-24 rounded-full border border-white/5 bg-white/5 flex items-center justify-center mb-6 relative">
-                <div className="absolute inset-0 rounded-full border border-primary/20 animate-[spin_4s_linear_infinite]"></div>
-                <span className="material-symbols-outlined text-[40px] text-outline-variant">schema</span>
-              </div>
-              <h4 className="font-body-lg text-body-lg text-on-surface mb-2">Awaiting Connection</h4>
-              <p className="font-body-sm text-body-sm text-on-surface-variant max-w-[250px]">
-                Enter your credentials and click "Test Connection" to preview the database schema, tables, and views here.
-              </p>
-              {/* Mock Code Snippet to simulate technical environment */}
-              <div className="mt-8 p-4 rounded-lg bg-black/40 border border-white/5 w-full text-left overflow-hidden">
-                <div className="flex items-center gap-2 mb-3">
-                  <div className="w-2 h-2 rounded-full bg-error"></div>
-                  <div className="w-2 h-2 rounded-full bg-tertiary-container"></div>
-                  <div className="w-2 h-2 rounded-full bg-secondary"></div>
+            {schemaPreview ? (
+              <div className="flex-1 overflow-y-auto p-8 relative z-10">
+                <div className="bg-white/5 rounded-xl border border-white/10 p-6">
+                  <h4 className="font-body-lg text-primary mb-4 border-b border-white/10 pb-2">Connected Successfully</h4>
+                  <pre className="font-label-mono text-label-mono text-success whitespace-pre-wrap">
+                    {schemaPreview}
+                  </pre>
                 </div>
-                <pre className="font-label-mono text-label-mono text-outline-variant">
+              </div>
+            ) : error ? (
+              <div className="flex-1 flex items-center justify-center p-8 relative z-10 text-center">
+                <div className="bg-error/10 border border-error/20 p-6 rounded-xl">
+                  <span className="material-symbols-outlined text-error text-[40px] mb-4">error</span>
+                  <h4 className="font-body-lg text-body-lg text-error mb-2">Connection Error</h4>
+                  <p className="font-body-sm text-body-sm text-error/80">{error}</p>
+                </div>
+              </div>
+            ) : (
+              <div className="flex-1 flex flex-col items-center justify-center p-8 text-center relative z-10">
+                <div className="w-24 h-24 rounded-full border border-white/5 bg-white/5 flex items-center justify-center mb-6 relative">
+                  <div className={`absolute inset-0 rounded-full border border-primary/20 ${loading ? 'animate-[spin_2s_linear_infinite]' : ''}`}></div>
+                  <span className="material-symbols-outlined text-[40px] text-outline-variant">schema</span>
+                </div>
+                <h4 className="font-body-lg text-body-lg text-on-surface mb-2">{loading ? "Testing Connection..." : "Awaiting Connection"}</h4>
+                <p className="font-body-sm text-body-sm text-on-surface-variant max-w-[250px]">
+                  Enter your credentials and click "Test Connection" to preview the database schema, tables, and views here.
+                </p>
+                {/* Mock Code Snippet to simulate technical environment */}
+                {!loading && (
+                  <div className="mt-8 p-4 rounded-lg bg-black/40 border border-white/5 w-full text-left overflow-hidden">
+                    <div className="flex items-center gap-2 mb-3">
+                      <div className="w-2 h-2 rounded-full bg-error"></div>
+                      <div className="w-2 h-2 rounded-full bg-tertiary-container"></div>
+                      <div className="w-2 h-2 rounded-full bg-secondary"></div>
+                    </div>
+                    <pre className="font-label-mono text-label-mono text-outline-variant">
 {`> awaiting_handshake()
 > establishing_tunnel()
 _ pending credentials...`}
-                </pre>
+                    </pre>
+                  </div>
+                )}
               </div>
-            </div>
+            )}
           </div>
         </div>
       </div>
