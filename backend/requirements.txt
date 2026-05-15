@@ -12,3 +12,4 @@ httpx
 pydantic
 python-dotenv
 pymysql
+svix
