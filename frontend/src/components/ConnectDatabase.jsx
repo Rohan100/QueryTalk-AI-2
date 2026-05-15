@@ -7,7 +7,7 @@ import axios from 'axios';
 export default function ConnectDatabase() {
   const navigate = useNavigate();
   const { getToken } = useAuth();
-  const { setDbStatus, setDbName } = useStore();
+  const { setDbStatus, setDbName, setActiveConnectionId } = useStore();
   
   const [dbType, setDbType] = useState('sqlite');
   const [host, setHost] = useState('');
@@ -54,12 +54,14 @@ export default function ConnectDatabase() {
     setLoading(true);
     try {
       const clerkToken = await getToken();
-      await axios.post('/api/db/connect', getPayload(), {
+      const res = await axios.post('/api/db/connect', getPayload(), {
         headers: { Authorization: `Bearer ${clerkToken}` }
       });
       setDbStatus('connected');
       setDbName(dbNameLocal || 'demo.db');
-      navigate('/');
+      const connId = res.data.connection_id;
+      if (connId) setActiveConnectionId(connId);
+      navigate(connId ? `/chat/${connId}` : '/');
     } catch (err) {
       setError(err.response?.data?.detail || 'Connection failed.');
       setLoading(false);

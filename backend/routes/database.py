@@ -2,30 +2,32 @@
 routes/database.py — Database connection management.
 
 Endpoints:
-  POST   /api/db/test      — Test a connection and return schema preview
-  POST   /api/db/connect   — Connect + persist credentials to Neon DB
-  GET    /api/db/saved     — Retrieve the current user's saved credentials
-  DELETE /api/db/saved     — Delete the current user's saved credentials
-  GET    /api/db/status    — Return current connection URL
-  GET    /api/db/schema    — Return schema of the connected user DB
-  GET    /api/db/analytics — Return aggregated analytics data
+  POST   /api/db/test               — Test a connection and return schema preview
+  POST   /api/db/connect            — Connect + persist connection to app DB
+  POST   /api/db/reconnect/{id}     — Re-activate a saved connection by ID
+  GET    /api/db/saved              — List the user's saved connections
+  DELETE /api/db/saved/{id}         — Delete a saved connection by ID
+  GET    /api/db/status             — Return current connection status
+  GET    /api/db/schema             — Return schema of the connected user DB
 """
 
 from __future__ import annotations
 
-import random
-from datetime import date, datetime, timedelta
-from typing import Optional
+import uuid
+from datetime import datetime
+from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import text
+from sqlalchemy import create_engine, inspect
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 import core.database as db_core
 from core.database import set_engine, test_engine, get_app_db
 from core.encryption import encrypt_password, decrypt_password
-from core.models import UserDbCredential
+from core.models import User, DatabaseConnection
+from core.security import verify_clerk_token
 
 
 router = APIRouter()
@@ -36,6 +38,7 @@ router = APIRouter()
 # ---------------------------------------------------------------------------
 
 class DBConnectionRequest(BaseModel):
+    name:     Optional[str] = None   # friendly label (auto-generated if omitted)
     db_type:  str
     host:     Optional[str] = None
     port:     Optional[int] = None
@@ -44,21 +47,71 @@ class DBConnectionRequest(BaseModel):
     password: Optional[str] = None
 
 
-class SavedCredentialResponse(BaseModel):
-    db_type:  str
-    host:     Optional[str]
-    port:     Optional[int]
-    db_name:  str
-    username: Optional[str]
-    password: str            # always "••••••••" — never returned in plaintext
-    updated_at: datetime
+class SavedConnectionResponse(BaseModel):
+    id:            str
+    name:          str
+    db_type:       str
+    host_hint:     Optional[str]
+    db_name_hint:  Optional[str]
+    is_active:     bool
+    created_at:    datetime
+    updated_at:    datetime
+
+    class Config:
+        from_attributes = True
+
+
+class TableNameResponse(BaseModel):
+    status: str
+    connection_id: str
+    tables: list[str]
+    count: int
+
+
+class ColumnSchemaResponse(BaseModel):
+    name: str
+    type: str
+    nullable: bool
+    default: Optional[str] = None
+    primary_key: bool = False
+
+
+class ForeignKeyResponse(BaseModel):
+    constrained_columns: list[str]
+    referred_schema: Optional[str] = None
+    referred_table: Optional[str] = None
+    referred_columns: list[str]
+
+
+class IndexResponse(BaseModel):
+    name: str
+    columns: list[str]
+    unique: bool = False
+
+
+class TableSchemaResponse(BaseModel):
+    name: str
+    schema_name: Optional[str] = None
+    full_name: str
+    columns: list[ColumnSchemaResponse]
+    primary_key: list[str]
+    foreign_keys: list[ForeignKeyResponse]
+    indexes: list[IndexResponse]
+
+
+class DatabaseSchemaResponse(BaseModel):
+    status: str
+    connection_id: str
+    tables: list[TableSchemaResponse]
+    count: int
 
 
 # ---------------------------------------------------------------------------
-# Helper: build a SQLAlchemy connection string
+# Helpers
 # ---------------------------------------------------------------------------
 
 def build_connection_string(req: DBConnectionRequest) -> str:
+    """Build a SQLAlchemy connection string from the request fields."""
     if req.db_type.lower() == "sqlite":
         return f"sqlite:///./{req.db_name}" if req.db_name else "sqlite:///./demo.db"
 
@@ -79,6 +132,186 @@ def build_connection_string(req: DBConnectionRequest) -> str:
         raise HTTPException(status_code=400, detail=f"Unsupported database type: {req.db_type}")
 
 
+def _resolve_user(clerk_user_id: str, db: Session) -> User:
+    """Look up the User row by Clerk ID. Raises 404 if not found."""
+    user = db.query(User).filter(User.clerk_user_id == clerk_user_id).first()
+    if not user:
+        raise HTTPException(
+            status_code=404,
+            detail=f"User with clerk_user_id '{clerk_user_id}' not found. "
+                   "Has the Clerk user.created webhook fired?",
+        )
+    return user
+
+
+def _parse_connection_uuid(connection_id: str) -> uuid.UUID:
+    try:
+        return uuid.UUID(connection_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid connection ID format.")
+
+
+def _get_user_connection(connection_id: str, user: User, app_db: Session) -> DatabaseConnection:
+    conn_uuid = _parse_connection_uuid(connection_id)
+    conn = (
+        app_db.query(DatabaseConnection)
+        .filter(
+            DatabaseConnection.id == conn_uuid,
+            DatabaseConnection.user_id == user.id,
+        )
+        .first()
+    )
+    if not conn:
+        raise HTTPException(status_code=404, detail="Connection not found.")
+    return conn
+
+
+def _connect_args_for(connection_string: str) -> dict[str, Any]:
+    connect_args: dict[str, Any] = {}
+    if connection_string.startswith("postgresql") and "sslmode" not in connection_string:
+        connect_args["sslmode"] = "prefer"
+    return connect_args
+
+
+def _table_full_name(table_name: str, schema_name: Optional[str]) -> str:
+    return f"{schema_name}.{table_name}" if schema_name else table_name
+
+
+def _split_table_name(table: str) -> tuple[Optional[str], str]:
+    if "." not in table:
+        return None, table
+    schema_name, table_name = table.split(".", 1)
+    return schema_name or None, table_name
+
+
+def _get_table_names_from_connection(connection_string: str) -> list[str]:
+    engine = create_engine(
+        connection_string,
+        pool_pre_ping=True,
+        connect_args=_connect_args_for(connection_string),
+    )
+    try:
+        inspector = inspect(engine)
+        return [
+            _table_full_name(table_name, schema_name)
+            for schema_name, table_name in _iter_user_tables(inspector)
+        ]
+    except SQLAlchemyError as e:
+        raise HTTPException(status_code=400, detail=f"Failed to inspect database: {e}") from e
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to inspect database: {e}") from e
+    finally:
+        engine.dispose()
+
+
+def _get_schema_from_connection(
+    connection_string: str,
+    table_filter: Optional[str] = None,
+) -> list[TableSchemaResponse]:
+    engine = create_engine(
+        connection_string,
+        pool_pre_ping=True,
+        connect_args=_connect_args_for(connection_string),
+    )
+    try:
+        inspector = inspect(engine)
+        selected_schema, selected_table = _split_table_name(table_filter) if table_filter else (None, None)
+        tables = []
+
+        for schema_name, table_name in _iter_user_tables(inspector):
+            if selected_table and table_name != selected_table:
+                continue
+            if selected_schema is not None and schema_name != selected_schema:
+                continue
+
+            primary_key = (
+                (inspector.get_pk_constraint(table_name, schema=schema_name) or {})
+                .get("constrained_columns", [])
+            )
+            pk_columns = set(primary_key)
+            columns = [
+                ColumnSchemaResponse(
+                    name=column["name"],
+                    type=str(column["type"]),
+                    nullable=bool(column.get("nullable", True)),
+                    default=str(column["default"]) if column.get("default") is not None else None,
+                    primary_key=column["name"] in pk_columns,
+                )
+                for column in inspector.get_columns(table_name, schema=schema_name)
+            ]
+            foreign_keys = [
+                ForeignKeyResponse(
+                    constrained_columns=fk.get("constrained_columns") or [],
+                    referred_schema=fk.get("referred_schema"),
+                    referred_table=fk.get("referred_table"),
+                    referred_columns=fk.get("referred_columns") or [],
+                )
+                for fk in inspector.get_foreign_keys(table_name, schema=schema_name)
+            ]
+            indexes = [
+                IndexResponse(
+                    name=index.get("name") or "",
+                    columns=index.get("column_names") or [],
+                    unique=bool(index.get("unique", False)),
+                )
+                for index in inspector.get_indexes(table_name, schema=schema_name)
+            ]
+            tables.append(
+                TableSchemaResponse(
+                    name=table_name,
+                    schema_name=schema_name,
+                    full_name=_table_full_name(table_name, schema_name),
+                    columns=columns,
+                    primary_key=primary_key,
+                    foreign_keys=foreign_keys,
+                    indexes=indexes,
+                )
+            )
+
+        if table_filter and not tables:
+            raise HTTPException(status_code=404, detail=f"Table '{table_filter}' not found.")
+
+        return tables
+    except HTTPException:
+        raise
+    except SQLAlchemyError as e:
+        raise HTTPException(status_code=400, detail=f"Failed to inspect database: {e}") from e
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to inspect database: {e}") from e
+    finally:
+        engine.dispose()
+
+
+def _iter_user_tables(inspector):
+    default_schema = inspector.default_schema_name
+    dialect_name = inspector.bind.dialect.name
+
+    if dialect_name in {"mysql", "sqlite"}:
+        schema_names = [default_schema]
+    else:
+        try:
+            schema_names = inspector.get_schema_names()
+        except SQLAlchemyError:
+            schema_names = [default_schema]
+
+    user_schemas = [
+        schema_name
+        for schema_name in schema_names
+        if schema_name not in {"information_schema", "pg_catalog"}
+        and not (schema_name or "").startswith("pg_toast")
+        and not (schema_name or "").startswith("pg_temp")
+    ] or [None]
+
+    for schema_name in user_schemas:
+        effective_schema = None if schema_name == default_schema else schema_name
+        try:
+            table_names = inspector.get_table_names(schema=effective_schema)
+        except SQLAlchemyError:
+            continue
+        for table_name in table_names:
+            yield effective_schema, table_name
+
+
 # ---------------------------------------------------------------------------
 # POST /test — test connection without saving
 # ---------------------------------------------------------------------------
@@ -86,6 +319,7 @@ def build_connection_string(req: DBConnectionRequest) -> str:
 @router.post("/test")
 def test_db_connection(
     request: DBConnectionRequest,
+    payload: dict = Depends(verify_clerk_token),
 ):
     """Test a database connection and return a schema preview."""
     conn_str = build_connection_string(request)
@@ -97,17 +331,18 @@ def test_db_connection(
 
 
 # ---------------------------------------------------------------------------
-# POST /connect — connect and persist credentials
+# POST /connect — connect and persist connection
 # ---------------------------------------------------------------------------
 
 @router.post("/connect")
 def connect_db(
     request: DBConnectionRequest,
     app_db: Session = Depends(get_app_db),
+    payload: dict = Depends(verify_clerk_token),
 ):
     """
     Connect to the user's database engine (in-memory) and persist the
-    credentials to Neon PostgreSQL for future sessions.
+    connection details to the app database.
     """
     conn_str = build_connection_string(request)
 
@@ -120,219 +355,286 @@ def connect_db(
     # 2. Set the in-memory engine for this session
     set_engine(conn_str)
 
-    # 3. Persist / update credentials in the app database
-    clerk_user_id: str = "anonymous"
+    # 3. Resolve the user from the Clerk token
+    clerk_user_id = payload["sub"]
+    user = _resolve_user(clerk_user_id, app_db)
 
+    # 4. Encrypt the full connection string
+    conn_str_enc = encrypt_password(conn_str)
 
-    password_enc = encrypt_password(request.password or "")
+    # 5. Auto-generate a name if not provided
+    conn_name = request.name or f"{request.db_type} — {request.db_name}"
 
+    # 6. Check for an existing connection with the same name for this user
     existing = (
-        app_db.query(UserDbCredential)
-        .filter(UserDbCredential.clerk_user_id == clerk_user_id)
+        app_db.query(DatabaseConnection)
+        .filter(
+            DatabaseConnection.user_id == user.id,
+            DatabaseConnection.name == conn_name,
+        )
         .first()
     )
 
     if existing:
-        # Upsert — update all fields
-        existing.db_type     = request.db_type
-        existing.host        = request.host
-        existing.port        = request.port
-        existing.db_name     = request.db_name
-        existing.username    = request.username
-        existing.password_enc = password_enc
-        existing.updated_at  = datetime.utcnow()
+        # Upsert — update the existing record
+        existing.db_type = request.db_type
+        existing.connection_string_enc = conn_str_enc
+        existing.host_hint = request.host
+        existing.db_name_hint = request.db_name
+        existing.is_active = True
+        existing.updated_at = datetime.utcnow()
+        connection_id = str(existing.id)
     else:
-        credential = UserDbCredential(
-            clerk_user_id = clerk_user_id,
-            db_type       = request.db_type,
-            host          = request.host,
-            port          = request.port,
-            db_name       = request.db_name,
-            username      = request.username,
-            password_enc  = password_enc,
+        connection = DatabaseConnection(
+            user_id=user.id,
+            name=conn_name,
+            db_type=request.db_type,
+            connection_string_enc=conn_str_enc,
+            host_hint=request.host,
+            db_name_hint=request.db_name,
+            is_active=True,
         )
-        app_db.add(credential)
+        app_db.add(connection)
+        app_db.flush()
+        connection_id = str(connection.id)
 
     app_db.commit()
 
     return {
-        "status":  "success",
-        "message": f"Connected to '{request.db_name}' and credentials saved.",
+        "status": "success",
+        "message": f"Connected to '{request.db_name}' and connection saved.",
+        "connection_id": connection_id,
     }
 
 
 # ---------------------------------------------------------------------------
-# GET /saved — retrieve the user's saved credentials
+# POST /reconnect/{connection_id} — re-activate a saved connection
 # ---------------------------------------------------------------------------
 
-@router.get("/saved", response_model=SavedCredentialResponse)
-def get_saved_credential(
+@router.post("/reconnect/{connection_id}")
+def reconnect_db(
+    connection_id: str,
     app_db: Session = Depends(get_app_db),
+    payload: dict = Depends(verify_clerk_token),
 ):
     """
-    Return the current user's saved DB credentials.
-    The password field is always masked — it is never returned in plaintext.
+    Re-activate a previously saved database connection.
+    Decrypts the stored connection string and sets the in-memory engine.
     """
-    clerk_user_id: str = "anonymous"
-    cred = (
-        app_db.query(UserDbCredential)
-        .filter(UserDbCredential.clerk_user_id == clerk_user_id)
+    clerk_user_id = payload["sub"]
+    user = _resolve_user(clerk_user_id, app_db)
+
+    try:
+        conn_uuid = uuid.UUID(connection_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid connection ID format.")
+
+    conn = (
+        app_db.query(DatabaseConnection)
+        .filter(
+            DatabaseConnection.id == conn_uuid,
+            DatabaseConnection.user_id == user.id,
+        )
         .first()
     )
-    if not cred:
-        raise HTTPException(status_code=404, detail="No saved credentials found.")
+    if not conn:
+        raise HTTPException(status_code=404, detail="Connection not found.")
 
-    return SavedCredentialResponse(
-        db_type    = cred.db_type,
-        host       = cred.host,
-        port       = cred.port,
-        db_name    = cred.db_name,
-        username   = cred.username,
-        password   = "••••••••" if cred.password_enc else "",
-        updated_at = cred.updated_at,
-    )
+    # Decrypt the stored connection string
+    conn_str = decrypt_password(conn.connection_string_enc)
+    if not conn_str:
+        raise HTTPException(
+            status_code=500,
+            detail="Could not decrypt connection string. The encryption key may have changed.",
+        )
 
+    # Verify the connection is still reachable
+    try:
+        test_engine(conn_str)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Reconnection failed: {e}")
 
-# ---------------------------------------------------------------------------
-# DELETE /saved — remove the user's saved credentials
-# ---------------------------------------------------------------------------
+    # Set the in-memory engine
+    set_engine(conn_str)
 
-@router.delete("/saved")
-def delete_saved_credential(
-    app_db: Session = Depends(get_app_db),
-):
-    """Delete the current user's saved database credentials."""
-    clerk_user_id: str = "anonymous"
-    cred = (
-        app_db.query(UserDbCredential)
-        .filter(UserDbCredential.clerk_user_id == clerk_user_id)
-        .first()
-    )
-    if not cred:
-        raise HTTPException(status_code=404, detail="No saved credentials found.")
-
-    app_db.delete(cred)
+    # Update the timestamp
+    conn.updated_at = datetime.utcnow()
     app_db.commit()
-    return {"status": "deleted", "message": "Saved credentials removed."}
+
+    return {
+        "status": "success",
+        "message": f"Reconnected to '{conn.name}'.",
+        "connection_id": str(conn.id),
+        "name": conn.name,
+        "db_type": conn.db_type,
+    }
 
 
 # ---------------------------------------------------------------------------
-# GET /status
+# GET /saved — list the user's saved connections
+# ---------------------------------------------------------------------------
+
+@router.get("/saved", response_model=list[SavedConnectionResponse])
+def get_saved_connections(
+    app_db: Session = Depends(get_app_db),
+    payload: dict = Depends(verify_clerk_token),
+):
+    """
+    Return all saved database connections for the authenticated user.
+    Connection strings are never returned — only metadata hints.
+    """
+    clerk_user_id = payload["sub"]
+    user = _resolve_user(clerk_user_id, app_db)
+
+    connections = (
+        app_db.query(DatabaseConnection)
+        .filter(DatabaseConnection.user_id == user.id)
+        .order_by(DatabaseConnection.updated_at.desc())
+        .all()
+    )
+
+    return [
+        SavedConnectionResponse(
+            id=str(c.id),
+            name=c.name,
+            db_type=c.db_type,
+            host_hint=c.host_hint,
+            db_name_hint=c.db_name_hint,
+            is_active=c.is_active,
+            created_at=c.created_at,
+            updated_at=c.updated_at,
+        )
+        for c in connections
+    ]
+
+
+# ---------------------------------------------------------------------------
+# GET /connections/{connection_id}/tables - table names for a saved database
+# ---------------------------------------------------------------------------
+
+@router.get("/connections/{connection_id}/tables", response_model=TableNameResponse)
+def get_connection_table_names(
+    connection_id: str,
+    app_db: Session = Depends(get_app_db),
+    payload: dict = Depends(verify_clerk_token),
+):
+    """Return table names for a specific saved database connection."""
+    clerk_user_id = payload["sub"]
+    user = _resolve_user(clerk_user_id, app_db)
+    conn = _get_user_connection(connection_id, user, app_db)
+
+    conn_str = decrypt_password(conn.connection_string_enc)
+    if not conn_str:
+        raise HTTPException(
+            status_code=500,
+            detail="Could not decrypt connection string. The encryption key may have changed.",
+        )
+
+    tables = _get_table_names_from_connection(conn_str)
+    return {
+        "status": "success",
+        "connection_id": str(conn.id),
+        "tables": tables,
+        "count": len(tables),
+    }
+
+
+# ---------------------------------------------------------------------------
+# GET /connections/{connection_id}/schema - structured schema for saved database
+# ---------------------------------------------------------------------------
+
+@router.get("/connections/{connection_id}/schema", response_model=DatabaseSchemaResponse)
+def get_connection_schema(
+    connection_id: str,
+    table: Optional[str] = Query(
+        default=None,
+        description="Optional table name. Use schema.table for non-default schemas.",
+    ),
+    app_db: Session = Depends(get_app_db),
+    payload: dict = Depends(verify_clerk_token),
+):
+    """
+    Return structured table schema for a specific saved database connection.
+    Pass ?table=table_name or ?table=schema.table to limit the response.
+    """
+    clerk_user_id = payload["sub"]
+    user = _resolve_user(clerk_user_id, app_db)
+    conn = _get_user_connection(connection_id, user, app_db)
+
+    conn_str = decrypt_password(conn.connection_string_enc)
+    if not conn_str:
+        raise HTTPException(
+            status_code=500,
+            detail="Could not decrypt connection string. The encryption key may have changed.",
+        )
+
+    tables = _get_schema_from_connection(conn_str, table_filter=table)
+    return {
+        "status": "success",
+        "connection_id": str(conn.id),
+        "tables": tables,
+        "count": len(tables),
+    }
+
+
+# ---------------------------------------------------------------------------
+# DELETE /saved/{connection_id} — delete a saved connection
+# ---------------------------------------------------------------------------
+
+@router.delete("/saved/{connection_id}")
+def delete_saved_connection(
+    connection_id: str,
+    app_db: Session = Depends(get_app_db),
+    payload: dict = Depends(verify_clerk_token),
+):
+    """Delete a specific saved database connection."""
+    clerk_user_id = payload["sub"]
+    user = _resolve_user(clerk_user_id, app_db)
+
+    try:
+        conn_uuid = uuid.UUID(connection_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid connection ID format.")
+
+    conn = (
+        app_db.query(DatabaseConnection)
+        .filter(
+            DatabaseConnection.id == conn_uuid,
+            DatabaseConnection.user_id == user.id,
+        )
+        .first()
+    )
+    if not conn:
+        raise HTTPException(status_code=404, detail="Connection not found.")
+
+    app_db.delete(conn)
+    app_db.commit()
+    return {"status": "deleted", "message": "Saved connection removed."}
+
+
+# ---------------------------------------------------------------------------
+# GET /status — connection status (no sensitive data)
 # ---------------------------------------------------------------------------
 
 @router.get("/status")
-def get_db_status():
-    return {"status": "connected", "url": db_core.DATABASE_URL}
+def get_db_status(payload: dict = Depends(verify_clerk_token)):
+    """Return whether a user database is currently connected in-memory."""
+    is_connected = db_core._user_engine is not None
+    return {
+        "status": "connected" if is_connected else "disconnected",
+    }
 
 
 # ---------------------------------------------------------------------------
-# GET /schema
+# GET /schema — schema of the connected user database
 # ---------------------------------------------------------------------------
 
 @router.get("/schema")
-def get_current_schema():
+def get_current_schema(payload: dict = Depends(verify_clerk_token)):
+    """Return schema information for the currently connected user database."""
     try:
         from core.database import get_schema_info
         schema_info = get_schema_info()
         return {"status": "success", "schema": schema_info}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch schema: {e}")
-
-
-# ---------------------------------------------------------------------------
-# GET /analytics
-# ---------------------------------------------------------------------------
-
-@router.get("/analytics")
-def get_analytics():
-    try:
-        session = db_core.SessionLocal()
-
-        try:
-            sales = session.execute(
-                text("SELECT amount, date, user_id FROM sales")
-            ).fetchall()
-            users = session.execute(
-                text("SELECT id, region, segment, acquisition_cost FROM users")
-            ).fetchall()
-        except Exception:
-            session.close()
-            return {"fallback": True}
-
-        session.close()
-
-        total_revenue    = sum(s[0] for s in sales) if sales else 0
-        active_customers = len(set(s[2] for s in sales))
-
-        today           = date.today()
-        thirty_days_ago = today - timedelta(days=30)
-        sixty_days_ago  = today - timedelta(days=60)
-
-        sales_this_month = [s for s in sales if s[1] >= thirty_days_ago]
-        sales_last_month = [s for s in sales if sixty_days_ago <= s[1] < thirty_days_ago]
-        rev_this_month   = sum(s[0] for s in sales_this_month)
-        rev_last_month   = sum(s[0] for s in sales_last_month)
-
-        growth_pct = (
-            ((rev_this_month - rev_last_month) / rev_last_month) * 100
-            if rev_last_month > 0
-            else 0
-        )
-
-        monthly_data: dict[str, float] = {}
-        for s in sales:
-            key = s[1].strftime("%b")
-            monthly_data[key] = monthly_data.get(key, 0) + s[0]
-
-        months_order = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
-        growth_data = [
-            {"name": m, "current": round(monthly_data[m], 2), "projected": round(monthly_data[m] * 1.1, 2)}
-            for m in months_order if m in monthly_data
-        ]
-
-        user_regions   = {u[0]: u[1] for u in users}
-        region_revenue: dict[str, float] = {}
-        for s in sales:
-            r = user_regions.get(s[2], "Unknown")
-            region_revenue[r] = region_revenue.get(r, 0) + s[0]
-
-        colors = ["#adc6ff", "#df7412", "#00a2e6", "#93000a", "#ffb786"]
-        market_share_data, revenue_region_data = [], []
-        for idx, (r, rev) in enumerate(region_revenue.items()):
-            market_share_data.append({
-                "name":  r,
-                "value": round((rev / total_revenue * 100) if total_revenue else 0, 1),
-                "color": colors[idx % len(colors)],
-            })
-            revenue_region_data.append({"name": r, "value": round(rev, 2)})
-
-        user_revs: dict = {}
-        for s in sales:
-            user_revs[s[2]] = user_revs.get(s[2], 0) + s[0]
-
-        customer_segments_data = [
-            {
-                "x":     round(u[3], 2),
-                "y":     round(user_revs[u[0]], 2),
-                "z":     random.randint(100, 500),
-                "group": u[2] if u[2] else 1,
-            }
-            for u in users if u[3] and u[0] in user_revs
-        ]
-
-        return {
-            "fallback": False,
-            "kpis": {
-                "totalRevenue":    round(total_revenue, 2),
-                "growthPct":       round(growth_pct, 1),
-                "activeCustomers": active_customers,
-                "monthlySales":    len(sales_this_month),
-            },
-            "growthData":            growth_data,
-            "marketShareData":       market_share_data,
-            "revenueRegionData":     revenue_region_data,
-            "customerSegmentsData":  customer_segments_data,
-        }
-
-    except Exception as e:
-        return {"fallback": True, "error": str(e)}

@@ -25,8 +25,8 @@ load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env"))
 # ---------------------------------------------------------------------------
 # Import Base and all models so their tables are registered on metadata
 # ---------------------------------------------------------------------------
-from core.database import Base  # noqa: E402
-import core.models              # noqa: E402, F401  — registers UserDbCredential
+from core.models import Base    # noqa: E402
+import core.models              # noqa: E402, F401  — registers all models
 
 # ---------------------------------------------------------------------------
 # Alembic Config

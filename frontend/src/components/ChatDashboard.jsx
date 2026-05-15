@@ -1,18 +1,22 @@
 import { useState, useRef, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth, useClerk } from '@clerk/react';
 import useStore from '../store';
 import axios from 'axios';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import AnalyticsDashboard from './AnalyticsDashboard';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 export default function ChatDashboard() {
   const navigate = useNavigate();
+  const { connectionId } = useParams();
   const { getToken } = useAuth();
   const { signOut } = useClerk();
-  const { chats, activeChatId, addMessage, createNewChat, setActiveChatId, dbStatus, dbName, apiKey, setApiKey } = useStore();
+  const { chats, activeChatId, addMessage, createNewChat, setActiveChatId, dbStatus, dbName, apiKey, setApiKey, setDbStatus, setDbName, setActiveConnectionId, activeConnectionId } = useStore();
   const [schemaData, setSchemaData] = useState('');
   const [loadingSchema, setLoadingSchema] = useState(false);
+  const [reconnecting, setReconnecting] = useState(false);
   const activeChat = chats.find(c => c.id === activeChatId) || chats[0];
   const chatHistory = activeChat ? activeChat.messages : [];
   const [input, setInput] = useState('');
@@ -20,6 +24,30 @@ export default function ChatDashboard() {
   const [activeTab, setActiveTab] = useState('chat');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const messagesEndRef = useRef(null);
+
+  // Auto-reconnect when arriving via URL (e.g. page refresh)
+  useEffect(() => {
+    if (!connectionId) return;
+    if (activeConnectionId === connectionId && dbStatus === 'connected') return;
+    const reconnect = async () => {
+      setReconnecting(true);
+      try {
+        const token = await getToken();
+        const res = await axios.post(`/api/db/reconnect/${connectionId}`, {}, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        setDbStatus('connected');
+        setDbName(res.data.name || connectionId);
+        setActiveConnectionId(connectionId);
+      } catch (err) {
+        // Reconnect failed — redirect back to databases page
+        navigate('/');
+      } finally {
+        setReconnecting(false);
+      }
+    };
+    reconnect();
+  }, [connectionId]);
 
   useEffect(() => {
     // bypass dbStatus check for now so UI can be seen
@@ -143,6 +171,13 @@ export default function ChatDashboard() {
 
   return (
     <div className="font-body-sm text-body-sm antialiased fixed inset-0 flex flex-col overflow-hidden bg-background">
+      {/* Reconnecting overlay — shown on page refresh while engine is re-initialising */}
+      {reconnecting && (
+        <div className="absolute inset-0 z-[9999] bg-background/90 backdrop-blur-sm flex flex-col items-center justify-center gap-4">
+          <div className="w-12 h-12 rounded-full border-2 border-primary/20 border-t-primary animate-spin" />
+          <p className="font-label-mono text-label-mono text-on-surface-variant uppercase tracking-widest">Connecting to database…</p>
+        </div>
+      )}
       {/* Top Navbar */}
       <header className="w-full bg-surface/30 backdrop-blur-md border-b border-white/5 flex justify-between items-center h-16 px-4 md:px-margin-desktop z-50 shrink-0">
         <div className="flex items-center gap-4">
@@ -167,8 +202,8 @@ export default function ChatDashboard() {
           <button onClick={() => setActiveTab('security')} className={`hidden sm:block hover:text-primary transition-colors ${activeTab === 'security' ? 'text-primary' : 'text-on-surface-variant'}`}>
             <span className="material-symbols-outlined" style={{fontVariationSettings: activeTab === 'security' ? "'FILL' 1" : "'FILL' 0"}}>shield</span>
           </button>
-          <button onClick={() => navigate('/connect')} className="bg-primary text-on-primary font-medium font-body-sm text-body-sm px-3 md:px-4 py-2 rounded-lg hover:bg-primary/90 transition-colors shadow-[0_0_15px_rgba(173,198,255,0.2)] whitespace-nowrap">
-            Connect DB
+          <button onClick={() => navigate('/')} className="bg-primary text-on-primary font-medium font-body-sm text-body-sm px-3 md:px-4 py-2 rounded-lg hover:bg-primary/90 transition-colors shadow-[0_0_15px_rgba(173,198,255,0.2)] whitespace-nowrap">
+            Switch DB
           </button>
           <div className="ml-1 md:ml-2 w-8 h-8 rounded-full overflow-hidden border border-white/20 shrink-0">
             <img alt="User Avatar" className="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAlUlP37Kr7hG9AMroagV09jBtw_oQkciSuV9RfKSHQdcqn3CSaDNtcf5AjH2kZcjyoniZavtoNE1XpLBWV4HYDBwDB7Vlg6jiQ-OYU8WmPeTVAy25L54yk1c0SXK_HhbVxdlOH2dogkttXeBlW3Xj-0j3zAHT9pUqNsNV3uoyfKT_b9-CLpNQJ_J-fSjfua2RdUyZsbmsP3xYNLX231W2T5Za78gG9zVHwFssV4lqpB5P52JVqxIToxvJagzvZNgsP8GNGuYGQOUR_" />
@@ -252,8 +287,10 @@ export default function ChatDashboard() {
                                                 <span className="material-symbols-outlined text-primary" style={{fontVariationSettings: "'FILL' 1"}}>neurology</span>
                                             </div>
                                             <div className="flex flex-col gap-4 w-full">
-                                                <div className="text-on-surface font-body-lg text-body-lg pt-2 whitespace-pre-wrap">
-                                                    {msg.content}
+                                                <div className="text-on-surface font-body-lg text-body-lg pt-2 markdown-content">
+                                                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                                        {msg.content}
+                                                    </ReactMarkdown>
                                                 </div>
                                                 {msg.sql && (
                                                     <div className="bg-[#0f1526] rounded-xl border border-white/10 overflow-hidden flex flex-col shadow-xl mt-2">

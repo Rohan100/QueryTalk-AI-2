@@ -2,6 +2,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import { useAuth } from '@clerk/react';
 import SignInPage from './pages/SignInPage';
 import SignUpPage from './pages/SignUpPage';
+import DatabasesPage from './pages/DatabasesPage';
 import ChatDashboard from './components/ChatDashboard';
 import ConnectDatabase from './components/ConnectDatabase';
 
@@ -36,50 +37,22 @@ function AuthRoute({ children }) {
 function App() {
   return (
     <Router>
-      {/* Persistent ambient background glows */}
       <div className="min-h-screen bg-background relative overflow-hidden">
         <div className="absolute top-[-100px] left-[10%] w-[500px] h-[500px] bg-primary rounded-full mix-blend-screen filter blur-[150px] opacity-10 pointer-events-none" />
         <div className="absolute bottom-[-100px] right-[10%] w-[400px] h-[400px] bg-tertiary rounded-full mix-blend-screen filter blur-[150px] opacity-10 pointer-events-none" />
 
         <Routes>
           {/* Auth routes — redirect to dashboard if already signed in */}
-          <Route
-            path="/sign-in/*"
-            element={
-              <AuthRoute>
-                <SignInPage />
-              </AuthRoute>
-            }
-          />
-          <Route
-            path="/sign-up/*"
-            element={
-              <AuthRoute>
-                <SignUpPage />
-              </AuthRoute>
-            }
-          />
+          <Route path="/sign-in/*" element={<AuthRoute><SignInPage /></AuthRoute>} />
+          <Route path="/sign-up/*" element={<AuthRoute><SignUpPage /></AuthRoute>} />
 
           {/* Legacy /login path — redirect to /sign-in for backward compat */}
           <Route path="/login" element={<Navigate to="/sign-in" replace />} />
 
           {/* Protected app routes */}
-          <Route
-            path="/connect"
-            element={
-              <ProtectedRoute>
-                <ConnectDatabase />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/"
-            element={
-              <ProtectedRoute>
-                <ChatDashboard />
-              </ProtectedRoute>
-            }
-          />
+          <Route path="/" element={<ProtectedRoute><DatabasesPage /></ProtectedRoute>} />
+          <Route path="/chat/:connectionId" element={<ProtectedRoute><ChatDashboard /></ProtectedRoute>} />
+          <Route path="/connect" element={<ProtectedRoute><ConnectDatabase /></ProtectedRoute>} />
 
           {/* Catch-all fallback */}
           <Route path="*" element={<Navigate to="/" replace />} />

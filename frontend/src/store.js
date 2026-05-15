@@ -55,6 +55,9 @@ const useStore = create((set) => ({
   
   dbName: 'Local Database',
   setDbName: (name) => set({ dbName: name }),
+
+  activeConnectionId: null,
+  setActiveConnectionId: (id) => set({ activeConnectionId: id }),
 }));
 
 export default useStore;
