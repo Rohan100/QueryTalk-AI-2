@@ -9,6 +9,13 @@ Endpoints:
   DELETE /api/db/saved/{id}         — Delete a saved connection by ID
   GET    /api/db/status             — Return current connection status
   GET    /api/db/schema             — Return schema of the connected user DB
+  POST   /api/db/test               — Test a connection and return schema preview
+  POST   /api/db/connect            — Connect + persist connection to app DB
+  POST   /api/db/reconnect/{id}     — Re-activate a saved connection by ID
+  GET    /api/db/saved              — List the user's saved connections
+  DELETE /api/db/saved/{id}         — Delete a saved connection by ID
+  GET    /api/db/status             — Return current connection status
+  GET    /api/db/schema             — Return schema of the connected user DB
 """
 
 from __future__ import annotations
