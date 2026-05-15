@@ -12,15 +12,11 @@ import os
 from dotenv import load_dotenv
 
 from sqlalchemy import create_engine, inspect, text, MetaData
-from sqlalchemy.orm import sessionmaker, declarative_base
+from sqlalchemy.orm import sessionmaker
 from sqlalchemy.exc import OperationalError
 
 load_dotenv()
 
-# ---------------------------------------------------------------------------
-# Declarative base (shared by all ORM models)
-# ---------------------------------------------------------------------------
-Base = declarative_base()
 
 # ---------------------------------------------------------------------------
 # 1. Application database (Neon PostgreSQL — stores credentials, etc.)
@@ -169,20 +165,3 @@ def get_schema_info() -> str:
     except Exception as e:
         return f"Schema unavailable: {e}"
 
-
-# ---------------------------------------------------------------------------
-# Startup
-# ---------------------------------------------------------------------------
-
-def init_db():
-    """
-    Create all application tables (idempotent).
-    Called from main.py on_startup.  Alembic handles schema migrations for
-    the app DB; this call ensures Base.metadata tables exist in environments
-    that skip the Alembic workflow (e.g. first-time local dev).
-    """
-    # Import models so their classes are registered on Base.metadata
-    import core.models  # noqa: F401
-
-    Base.metadata.create_all(bind=app_engine)
-    print("[QueryTalk] Application database tables initialised.")
