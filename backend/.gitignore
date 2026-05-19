@@ -8,8 +8,7 @@ __pycache__
 
 # Virtual Environment
 venv/
-.env
-
+.env*
 # Database
 *.db
 *.sqlite3
