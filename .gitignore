@@ -4,7 +4,7 @@ node_modules
 # Environment variables
 .env
 .env.example
-__pycache__/
+__pycache__
 # Python backend ignores
 backend/__pycache__
 backend/*.py[cod]

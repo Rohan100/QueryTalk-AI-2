@@ -17,6 +17,10 @@ export default function ChatDashboard() {
   const [schemaData, setSchemaData] = useState('');
   const [loadingSchema, setLoadingSchema] = useState(false);
   const [reconnecting, setReconnecting] = useState(false);
+  const [tablesData, setTablesData] = useState([]);
+  const [loadingTables, setLoadingTables] = useState(false);
+  const [tablesError, setTablesError] = useState('');
+  const [expandedTable, setExpandedTable] = useState(null);
   const activeChat = chats.find(c => c.id === activeChatId) || chats[0];
   const chatHistory = activeChat ? activeChat.messages : [];
   const [input, setInput] = useState('');
@@ -105,6 +109,31 @@ export default function ChatDashboard() {
       fetchSchema();
     }
   }, [activeTab, dbStatus, getToken]);
+
+  useEffect(() => {
+    if (activeTab === 'tables' && connectionId) {
+      const fetchTables = async () => {
+        setLoadingTables(true);
+        setTablesError('');
+        try {
+          const clerkToken = await getToken();
+          const res = await axios.get(`/api/db/connections/${connectionId}/schema`, {
+            headers: { Authorization: `Bearer ${clerkToken}` },
+          });
+          setTablesData(res.data.tables || []);
+          if (res.data.tables && res.data.tables.length > 0) {
+            setExpandedTable(res.data.tables[0].full_name);
+          }
+        } catch (e) {
+          console.error(e);
+          setTablesError('Failed to load table structure. Make sure you are connected to a database.');
+        } finally {
+          setLoadingTables(false);
+        }
+      };
+      fetchTables();
+    }
+  }, [activeTab, connectionId, getToken]);
 
   const handleLogout = async () => {
     await signOut();
@@ -239,6 +268,10 @@ export default function ChatDashboard() {
             <span className="material-symbols-outlined text-label-mono" style={{fontVariationSettings: activeTab === 'databases' ? "'FILL' 1" : "'FILL' 0"}}>database</span>
             <span className="font-body-lg text-body-lg">Databases</span>
             </a>
+            <a onClick={(e) => { e.preventDefault(); setActiveTab('tables'); setSidebarOpen(false); }} className={`flex items-center gap-3 px-4 py-3 rounded-full transition-colors duration-200 active:scale-95 transition-transform ${activeTab === 'tables' ? 'bg-secondary-container text-on-secondary-container font-medium' : 'text-on-surface-variant hover:bg-surface-variant/50'}`} href="#">
+            <span className="material-symbols-outlined text-label-mono" style={{fontVariationSettings: activeTab === 'tables' ? "'FILL' 1" : "'FILL' 0"}}>table_chart</span>
+            <span className="font-body-lg text-body-lg">Tables</span>
+            </a>
             <a onClick={(e) => { e.preventDefault(); setActiveTab('history'); setSidebarOpen(false); }} className={`flex items-center gap-3 px-4 py-3 rounded-full transition-colors duration-200 active:scale-95 transition-transform ${activeTab === 'history' ? 'bg-secondary-container text-on-secondary-container font-medium' : 'text-on-surface-variant hover:bg-surface-variant/50'}`} href="#">
             <span className="material-symbols-outlined text-label-mono" style={{fontVariationSettings: activeTab === 'history' ? "'FILL' 1" : "'FILL' 0"}}>history</span>
             <span className="font-body-lg text-body-lg">History</span>
@@ -366,6 +399,188 @@ export default function ChatDashboard() {
                                 <span className="material-symbols-outlined text-[64px] mb-4 text-primary/30">history</span>
                                 <p className="font-body-lg text-body-lg text-on-surface">No history yet</p>
                                 <p className="font-body-sm text-body-sm mt-2">Your past chat sessions will appear here.</p>
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {activeTab === 'tables' && (
+                    <div className="flex flex-col mt-4">
+                        <div className="flex items-center justify-between mb-6">
+                            <h2 className="font-display text-headline-sm font-bold text-primary flex items-center gap-2">
+                                <span className="material-symbols-outlined" style={{fontVariationSettings: "'FILL' 1"}}>table_chart</span>
+                                Table Structure
+                            </h2>
+                            {tablesData.length > 0 && (
+                                <span className="font-label-mono text-label-mono text-on-surface-variant bg-surface-container-highest px-3 py-1 rounded-full border border-white/10">
+                                    {tablesData.length} table{tablesData.length !== 1 ? 's' : ''}
+                                </span>
+                            )}
+                        </div>
+
+                        {loadingTables && (
+                            <div className="flex flex-col gap-4">
+                                {[1, 2, 3].map(i => (
+                                    <div key={i} className="bg-surface-container-low/60 rounded-2xl border border-white/5 p-5 animate-pulse">
+                                        <div className="flex items-center gap-3 mb-4">
+                                            <div className="w-8 h-8 rounded-lg bg-white/5" />
+                                            <div className="h-4 bg-white/5 rounded w-40" />
+                                            <div className="ml-auto h-5 bg-white/5 rounded-full w-20" />
+                                        </div>
+                                        <div className="flex flex-col gap-2">
+                                            {[1,2,3].map(j => <div key={j} className="h-10 bg-white/5 rounded-lg" />)}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+
+                        {!loadingTables && tablesError && (
+                            <div className="flex items-center gap-3 px-5 py-4 rounded-xl bg-error/10 border border-error/20 text-error">
+                                <span className="material-symbols-outlined text-[20px]">error</span>
+                                <p className="text-sm">{tablesError}</p>
+                            </div>
+                        )}
+
+                        {!loadingTables && !tablesError && tablesData.length === 0 && (
+                            <div className="flex flex-col items-center justify-center mt-20 text-on-surface-variant/50">
+                                <span className="material-symbols-outlined text-[64px] mb-4 text-primary/30">table_chart</span>
+                                <p className="font-body-lg text-body-lg text-on-surface">No tables found</p>
+                                <p className="font-body-sm text-body-sm mt-2">Your database appears to be empty.</p>
+                            </div>
+                        )}
+
+                        {!loadingTables && !tablesError && tablesData.length > 0 && (
+                            <div className="flex flex-col gap-4">
+                                {tablesData.map((table) => {
+                                    const isOpen = expandedTable === table.full_name;
+                                    return (
+                                        <div key={table.full_name} className="bg-surface-container-low/60 backdrop-blur-md rounded-2xl border border-white/8 overflow-hidden hover:border-primary/20 transition-all duration-200">
+                                            {/* Table header */}
+                                            <button
+                                                onClick={() => setExpandedTable(isOpen ? null : table.full_name)}
+                                                className="w-full flex items-center gap-3 px-5 py-4 hover:bg-white/[0.03] transition-colors text-left"
+                                            >
+                                                <div className="w-8 h-8 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0">
+                                                    <span className="material-symbols-outlined text-primary text-[16px]" style={{fontVariationSettings: "'FILL' 1"}}>table_chart</span>
+                                                </div>
+                                                <div className="flex-1 min-w-0">
+                                                    <span className="font-display font-semibold text-on-surface text-base truncate block">{table.full_name}</span>
+                                                    {table.schema_name && (
+                                                        <span className="font-label-mono text-label-mono text-on-surface-variant/60 text-[11px]">schema: {table.schema_name}</span>
+                                                    )}
+                                                </div>
+                                                <div className="flex items-center gap-2 shrink-0">
+                                                    <span className="font-label-mono text-[11px] text-on-surface-variant bg-surface-container-highest px-2.5 py-1 rounded-full border border-white/10">
+                                                        {table.columns.length} col{table.columns.length !== 1 ? 's' : ''}
+                                                    </span>
+                                                    {table.primary_key.length > 0 && (
+                                                        <span className="font-label-mono text-[11px] text-amber-400 bg-amber-400/10 border border-amber-400/20 px-2.5 py-1 rounded-full">
+                                                            PK
+                                                        </span>
+                                                    )}
+                                                    {table.foreign_keys.length > 0 && (
+                                                        <span className="font-label-mono text-[11px] text-sky-400 bg-sky-400/10 border border-sky-400/20 px-2.5 py-1 rounded-full">
+                                                            FK
+                                                        </span>
+                                                    )}
+                                                    <span className={`material-symbols-outlined text-on-surface-variant text-[20px] transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}>expand_more</span>
+                                                </div>
+                                            </button>
+
+                                            {/* Columns table */}
+                                            {isOpen && (
+                                                <div className="border-t border-white/5">
+                                                    {/* Column rows */}
+                                                    <div className="overflow-x-auto">
+                                                        <table className="w-full text-left">
+                                                            <thead>
+                                                                <tr className="bg-surface-container/50 border-b border-white/5">
+                                                                    <th className="px-5 py-2.5 font-label-mono text-[11px] uppercase tracking-widest text-on-surface-variant/60 font-medium">Column</th>
+                                                                    <th className="px-5 py-2.5 font-label-mono text-[11px] uppercase tracking-widest text-on-surface-variant/60 font-medium">Type</th>
+                                                                    <th className="px-5 py-2.5 font-label-mono text-[11px] uppercase tracking-widest text-on-surface-variant/60 font-medium">Attributes</th>
+                                                                    <th className="px-5 py-2.5 font-label-mono text-[11px] uppercase tracking-widest text-on-surface-variant/60 font-medium">Default</th>
+                                                                </tr>
+                                                            </thead>
+                                                            <tbody className="divide-y divide-white/5">
+                                                                {table.columns.map((col) => (
+                                                                    <tr key={col.name} className="hover:bg-white/[0.025] transition-colors group">
+                                                                        <td className="px-5 py-3">
+                                                                            <div className="flex items-center gap-2">
+                                                                                {col.primary_key && (
+                                                                                    <span className="material-symbols-outlined text-amber-400 text-[14px]" title="Primary Key" style={{fontVariationSettings: "'FILL' 1"}}>key</span>
+                                                                                )}
+                                                                                <span className={`font-label-mono text-sm ${col.primary_key ? 'text-amber-300 font-semibold' : 'text-on-surface'}`}>{col.name}</span>
+                                                                            </div>
+                                                                        </td>
+                                                                        <td className="px-5 py-3">
+                                                                            <span className="font-label-mono text-[12px] text-secondary/80 bg-secondary/5 border border-secondary/15 px-2 py-0.5 rounded">{col.type}</span>
+                                                                        </td>
+                                                                        <td className="px-5 py-3">
+                                                                            <div className="flex items-center gap-1.5 flex-wrap">
+                                                                                {!col.nullable && (
+                                                                                    <span className="font-label-mono text-[10px] text-rose-400 bg-rose-400/10 border border-rose-400/20 px-2 py-0.5 rounded-full">NOT NULL</span>
+                                                                                )}
+                                                                                {col.nullable && (
+                                                                                    <span className="font-label-mono text-[10px] text-on-surface-variant/50 bg-white/5 border border-white/10 px-2 py-0.5 rounded-full">NULLABLE</span>
+                                                                                )}
+                                                                                {col.primary_key && (
+                                                                                    <span className="font-label-mono text-[10px] text-amber-400 bg-amber-400/10 border border-amber-400/20 px-2 py-0.5 rounded-full">PRIMARY KEY</span>
+                                                                                )}
+                                                                            </div>
+                                                                        </td>
+                                                                        <td className="px-5 py-3">
+                                                                            {col.default != null ? (
+                                                                                <span className="font-label-mono text-[11px] text-on-surface-variant/70">{col.default}</span>
+                                                                            ) : (
+                                                                                <span className="text-on-surface-variant/30 text-xs">—</span>
+                                                                            )}
+                                                                        </td>
+                                                                    </tr>
+                                                                ))}
+                                                            </tbody>
+                                                        </table>
+                                                    </div>
+
+                                                    {/* FK & Index info */}
+                                                    {(table.foreign_keys.length > 0 || table.indexes.length > 0) && (
+                                                        <div className="border-t border-white/5 px-5 py-4 flex flex-wrap gap-6">
+                                                            {table.foreign_keys.length > 0 && (
+                                                                <div className="flex-1 min-w-[200px]">
+                                                                    <p className="font-label-mono text-[10px] uppercase tracking-widest text-sky-400/70 mb-2">Foreign Keys</p>
+                                                                    <div className="flex flex-col gap-1.5">
+                                                                        {table.foreign_keys.map((fk, i) => (
+                                                                            <div key={i} className="flex items-center gap-2 text-[12px] font-label-mono text-on-surface-variant">
+                                                                                <span className="text-sky-400">{fk.constrained_columns.join(', ')}</span>
+                                                                                <span className="material-symbols-outlined text-[12px] text-on-surface-variant/40">arrow_forward</span>
+                                                                                <span className="text-on-surface-variant/70">{fk.referred_table}.{fk.referred_columns.join(', ')}</span>
+                                                                            </div>
+                                                                        ))}
+                                                                    </div>
+                                                                </div>
+                                                            )}
+                                                            {table.indexes.length > 0 && (
+                                                                <div className="flex-1 min-w-[200px]">
+                                                                    <p className="font-label-mono text-[10px] uppercase tracking-widest text-purple-400/70 mb-2">Indexes</p>
+                                                                    <div className="flex flex-col gap-1.5">
+                                                                        {table.indexes.map((idx, i) => (
+                                                                            <div key={i} className="flex items-center gap-2 text-[12px] font-label-mono text-on-surface-variant">
+                                                                                <span className="material-symbols-outlined text-purple-400 text-[12px]">bolt</span>
+                                                                                <span>{idx.name || '(unnamed)'}</span>
+                                                                                <span className="text-on-surface-variant/50">({idx.columns.join(', ')})</span>
+                                                                                {idx.unique && <span className="text-purple-400/80 text-[10px] bg-purple-400/10 border border-purple-400/20 px-1.5 py-0.5 rounded-full">UNIQUE</span>}
+                                                                            </div>
+                                                                        ))}
+                                                                    </div>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })}
                             </div>
                         )}
                     </div>
