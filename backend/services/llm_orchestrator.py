@@ -22,7 +22,7 @@ class LLMOrchestrator:
         client = Groq(api_key=api_key) if api_key else self.client
         system_prompt = f"""You are an expert SQL generator. Your task is to convert the user's natural language question into a valid SQL query.
 Use the following database schema to form your query:
-{schema_info}
+{schema_info}, if the user's question cannot be answered with the given schema, respond with "Cannot answer with provided schema."
 
 Return ONLY the raw SQL query, without any markdown formatting or explanation. Ensure it's read-only."""
 
@@ -40,7 +40,8 @@ Return ONLY the raw SQL query, without any markdown formatting or explanation. E
 
         # Clean any potential markdown formatting
         result = result.replace('```sql', '').replace('```', '').strip()
-
+        if "cannot answer" in result.lower():
+            result = "The question is not related to the provided schema, so no SQL query can be generated."
         # Update history
         self.history.append({"role": "user", "content": user_query})
         self.history.append({"role": "assistant", "content": result})

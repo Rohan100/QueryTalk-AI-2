@@ -665,7 +665,7 @@ from sqlalchemy import text
 from datetime import datetime, date, timedelta
 
 @router.get("/analytics")
-def get_analytics(current_user: dict = Depends(verify_clerk_token)):
+def get_analytics():
     try:
         from core.database import SessionLocal
         session = SessionLocal()
