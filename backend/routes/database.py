@@ -119,10 +119,13 @@ class DatabaseSchemaResponse(BaseModel):
 
 def build_connection_string(req: DBConnectionRequest) -> str:
     """Build a SQLAlchemy connection string from the request fields."""
+    password = req.password
+    if password:
+        password = password.replace("@", "%40")
     if req.db_type.lower() == "sqlite":
         return f"sqlite:///./{req.db_name}" if req.db_name else "sqlite:///./demo.db"
 
-    if not all([req.host, req.db_name, req.username, req.password]):
+    if not all([req.host, req.db_name, req.username, password]):
         raise HTTPException(
             status_code=400,
             detail="Missing required connection parameters (host, db_name, username, password).",
@@ -132,9 +135,9 @@ def build_connection_string(req: DBConnectionRequest) -> str:
     db_type = req.db_type.lower()
 
     if db_type == "postgresql":
-        return f"postgresql://{req.username}:{req.password}@{req.host}{port_str}/{req.db_name}"
+        return f"postgresql://{req.username}:{password}@{req.host}{port_str}/{req.db_name}"
     elif db_type == "mysql":
-        return f"mysql+pymysql://{req.username}:{req.password}@{req.host}{port_str}/{req.db_name}"
+        return f"mysql+pymysql://{req.username}:{password}@{req.host}{port_str}/{req.db_name}"
     else:
         raise HTTPException(status_code=400, detail=f"Unsupported database type: {req.db_type}")
 
