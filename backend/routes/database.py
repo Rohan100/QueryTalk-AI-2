@@ -135,6 +135,8 @@ def build_connection_string(req: DBConnectionRequest) -> str:
         return f"postgresql://{req.username}:{req.password}@{req.host}{port_str}/{req.db_name}"
     elif db_type == "mysql":
         return f"mysql+pymysql://{req.username}:{req.password}@{req.host}{port_str}/{req.db_name}"
+    elif db_type == "snowflake":
+        return f"snowflake://{req.username}:{req.password}@{req.host}/{req.db_name}"
     else:
         raise HTTPException(status_code=400, detail=f"Unsupported database type: {req.db_type}")
 
