@@ -35,7 +35,7 @@ def chat_endpoint(request: Request, chat_req: ChatRequest, db: Session = Depends
     if not is_safe_query(sql_query):
         return {
             "reply": "I'm sorry, but I cannot execute that query due to security restrictions.",
-            "sql": sql_query,
+            "sql": None,
             "data": None
         }
 
