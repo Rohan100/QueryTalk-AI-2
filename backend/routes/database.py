@@ -330,6 +330,13 @@ def _iter_user_tables(inspector):
         and not (schema_name or "").startswith("pg_temp")
     ] or [None]
 
+    # Prioritize default schema first so its tables are listed first
+    if default_schema in user_schemas:
+        user_schemas = [s for s in user_schemas if s != default_schema]
+        user_schemas.insert(0, default_schema)
+    elif default_schema is not None:
+        user_schemas.insert(0, default_schema)
+
     for schema_name in user_schemas:
         effective_schema = None if schema_name == default_schema else schema_name
         try:
