@@ -23,7 +23,7 @@ class LLMOrchestrator:
         dialect_clause = f" {dialect}" if dialect else ""
         system_prompt = f"""You are an expert SQL generator. Your task is to convert the user's natural language question into a valid{dialect_clause} SQL query.
 Use the following database schema to form your query:
-{schema_info}
+{schema_info},if the result generated is not related to the schema, or if the question cannot be answered with the given schema, respond with "The question is not related to the provided schema, so no SQL query can be generated."
 
 Return ONLY the raw SQL query, without any markdown formatting or explanation. Ensure it's read-only.
 Ensure that table names and column names are properly quoted according to the rules of the{dialect_clause} SQL dialect (for example, in PostgreSQL double quotes `"` must be used to enclose identifiers that contain spaces or capital letters, like `"Sales Data"`, and backticks `` ` `` are invalid. In SQLite or MySQL, backticks `` ` `` or double quotes `"` can be used). Avoid backticks `` ` `` entirely if the dialect is PostgreSQL."""
@@ -42,7 +42,8 @@ Ensure that table names and column names are properly quoted according to the ru
 
         # Clean any potential markdown formatting
         result = result.replace('```sql', '').replace('```', '').strip()
-
+        if "cannot answer" in result.lower():
+            result = "The question is not related to the provided schema, so no SQL query can be generated."
         # Update history
         self.history.append({"role": "user", "content": user_query})
         self.history.append({"role": "assistant", "content": result})

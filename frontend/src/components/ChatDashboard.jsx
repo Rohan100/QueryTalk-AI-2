@@ -28,6 +28,18 @@ export default function ChatDashboard() {
   const [activeTab, setActiveTab] = useState('chat');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const messagesEndRef = useRef(null);
+  const [copiedIndex, setCopiedIndex] = useState(null);
+
+  const handleCopySql = (sqlText, index) => {
+    navigator.clipboard.writeText(sqlText).then(() => {
+      setCopiedIndex(index);
+      setTimeout(() => {
+        setCopiedIndex(null);
+      }, 2000);
+    }).catch(err => {
+      console.error('Failed to copy text: ', err);
+    });
+  };
 
   // Auto-reconnect when arriving via URL (e.g. page refresh)
   useEffect(() => {
@@ -165,37 +177,7 @@ export default function ChatDashboard() {
   };
 
   const renderTable = (data) => {
-    if (!data || data.length === 0) return null;
-    const keys = Object.keys(data[0]);
-
-    return (
-      <div className="bg-surface-container-low/60 backdrop-blur-md rounded-xl border border-white/5 overflow-hidden mt-4">
-        <div className="px-4 py-3 border-b border-white/5 flex items-center gap-2">
-          <span className="material-symbols-outlined text-primary text-[18px]">table_chart</span>
-          <span className="font-body-sm text-body-sm font-medium text-on-surface">Data Preview</span>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left font-body-sm text-body-sm">
-            <thead>
-              <tr className="border-b border-white/5 bg-surface-container/30">
-                {keys.map(k => (
-                  <th key={k} className="px-4 py-3 font-medium text-on-surface-variant">{k}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-white/5">
-              {data.slice(0, 10).map((row, i) => (
-                <tr key={i} className="hover:bg-white/[0.02] transition-colors">
-                  {keys.map(k => (
-                    <td key={k} className="px-4 py-3 text-on-surface">{row[k]}</td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    );
+    return <PreviewTable data={data} />;
   };
 
   return (
@@ -350,27 +332,68 @@ export default function ChatDashboard() {
                             </div>
                           </div>
                         ) : (
-                          <div className="flex items-start gap-3 max-w-[88%] mb-6">
-                            <div className="w-8 h-8 rounded-xl bg-primary/12 border border-primary/25 flex items-center justify-center shrink-0 mt-0.5">
-                              <span className="material-symbols-outlined text-primary text-[16px]" style={{ fontVariationSettings: "'FILL' 1" }}>neurology</span>
-                            </div>
-                            <div className="flex flex-col gap-3 w-full min-w-0">
-                              <div className="text-white/90 text-sm leading-relaxed markdown-content pt-1">
-                                <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                                  {msg.content}
-                                </ReactMarkdown>
-                              </div>
-                              {msg.sql && (
-                                <div className="rounded-xl overflow-hidden border border-outline shadow-xl mt-1">
-                                  <div className="flex items-center gap-2 px-4 py-2 border-b border-outline bg-background/70">
-                                    <span className="w-2.5 h-2.5 rounded-full bg-error/60" />
-                                    <span className="w-2.5 h-2.5 rounded-full bg-amber-400/60" />
-                                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-400/60" />
-                                    <span className="ml-2 font-mono text-[11px] text-muted-foreground">executed.sql</span>
-                                  </div>
-                                  <div className="p-4 font-mono text-[12px] text-primary/80 leading-relaxed overflow-x-auto bg-black/40">
-                                    <pre><code>{msg.sql}</code></pre>
-                                  </div>
+                            chatHistory.map((msg, idx) => (
+                                <div key={idx} className="animate-fade-up">
+                                    {msg.role === 'user' ? (
+                                        <div className="flex justify-end mb-6">
+                                            <div className="text-white px-5 py-3.5 rounded-2xl rounded-tr-sm max-w-[75%] text-sm leading-relaxed shadow-lg" style={{ background: '#1C1E2D', border: '1px solid #2A2D3D' }}>
+                                                {msg.content}
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div className="flex items-start gap-3 max-w-[88%] mb-6">
+                                            <div className="w-8 h-8 rounded-xl bg-primary/12 border border-primary/25 flex items-center justify-center shrink-0 mt-0.5">
+                                                <span className="material-symbols-outlined text-primary text-[16px]" style={{ fontVariationSettings: "'FILL' 1" }}>neurology</span>
+                                            </div>
+                                            <div className="flex flex-col gap-3 w-full min-w-0">
+                                                <div className="text-white/90 text-sm leading-relaxed markdown-content pt-1">
+                                                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                                        {msg.content}
+                                                    </ReactMarkdown>
+                                                </div>
+                                                {msg.sql && (
+                                                    <div className="rounded-xl overflow-hidden border border-outline shadow-xl mt-1">
+                                                        <div className="flex items-center justify-between px-4 py-2 border-b border-outline bg-background/70">
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="w-2.5 h-2.5 rounded-full bg-error/60" />
+                                                                <span className="w-2.5 h-2.5 rounded-full bg-amber-400/60" />
+                                                                <span className="w-2.5 h-2.5 rounded-full bg-emerald-400/60" />
+                                                                <span className="ml-2 font-mono text-[11px] text-muted-foreground">SQL Query</span>
+                                                            </div>
+                                                            <button
+                                                                onClick={() => handleCopySql(msg.sql, idx)}
+                                                                className="flex items-center gap-1.5 px-2 py-1 rounded text-[11px] font-mono text-muted-foreground hover:text-white hover:bg-white/5 transition-all active:scale-95"
+                                                                title="Copy SQL Query"
+                                                            >
+                                                                <span className="material-symbols-outlined text-[13px]">
+                                                                    {copiedIndex === idx ? 'done' : 'content_copy'}
+                                                                </span>
+                                                                <span>{copiedIndex === idx ? 'Copied' : 'Copy'}</span>
+                                                            </button>
+                                                        </div>
+                                                        <div className="p-4 font-mono text-[12px] text-primary/80 leading-relaxed overflow-x-auto bg-black/40">
+                                                            <pre><code>{msg.sql}</code></pre>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                                {msg.data && renderTable(msg.data)}
+                                                {msg.data && renderChart(msg.data)}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            ))
+                        )}
+                        
+                        {loading && (
+                            <div className="flex items-start gap-3 max-w-[88%]">
+                                <div className="w-8 h-8 rounded-xl bg-primary/12 border border-primary/25 flex items-center justify-center shrink-0">
+                                    <span className="material-symbols-outlined text-primary text-[16px]" style={{ fontVariationSettings: "'FILL' 1" }}>neurology</span>
+                                </div>
+                                <div className="flex items-center gap-1.5 h-9 px-4 rounded-xl border border-outline w-fit" style={{ background: '#1C1E2D' }}>
+                                    <span className="w-1.5 h-1.5 rounded-full bg-primary/70 animate-bounce" />
+                                    <span className="w-1.5 h-1.5 rounded-full bg-primary/70 animate-bounce" style={{ animationDelay: '0.18s' }} />
+                                    <span className="w-1.5 h-1.5 rounded-full bg-primary/70 animate-bounce" style={{ animationDelay: '0.36s' }} />
                                 </div>
                               )}
                               {msg.data && renderTable(msg.data)}
@@ -688,54 +711,32 @@ export default function ChatDashboard() {
                           </div>
                         </div>
                     </div>
-                )} */}
-
-
-
-
-              {activeTab === 'settings' && (
-                <div className="flex flex-col mt-4 max-w-2xl">
-                  <h2 className="font-display text-headline-sm font-bold text-primary mb-6 flex items-center gap-2"><span className="material-symbols-outlined">settings</span> Settings</h2>
-                  <div className="bg-surface-container-low/80 backdrop-blur-md rounded-2xl border border-white/5 p-6 flex flex-col gap-6">
-
-                    <div>
-                      <label className="block text-sm font-medium text-on-surface-variant mb-2">Anthropic API Key</label>
-                      <p className="text-xs text-on-surface-variant/70 mb-3">If provided, this key will be used instead of the server's default key.</p>
-                      <input
-                        type="password"
-                        value={apiKey}
-                        onChange={(e) => setApiKey(e.target.value)}
-                        placeholder="sk-ant-api03-..."
-                        className="w-full bg-surface-container-high border border-white/10 rounded-xl px-4 py-3 text-on-surface focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/50 transition-all font-label-mono text-sm"
-                      />
-                    </div>
-
-                    <hr className="border-white/5" />
-
-                    <div>
-                      <h3 className="text-on-surface font-medium mb-3">Theme Preferences</h3>
-                      <div className="flex gap-4">
-                        <button className="flex-1 py-3 rounded-xl border-2 border-primary bg-primary/10 text-primary font-medium flex items-center justify-center gap-2">
-                          <span className="material-symbols-outlined">dark_mode</span> Dark
-                        </button>
-                        <button className="flex-1 py-3 rounded-xl border-2 border-white/5 bg-surface-container-high text-on-surface-variant font-medium flex items-center justify-center gap-2 opacity-50 cursor-not-allowed">
-                          <span className="material-symbols-outlined">light_mode</span> Light (Soon)
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-              {activeTab === 'support' && (
-                <div className="flex flex-col mt-4 max-w-3xl">
-                  <h2 className="font-display text-headline-sm font-bold text-primary mb-6 flex items-center gap-2"><span className="material-symbols-outlined">help_outline</span> Support Center</h2>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-                    <div className="bg-surface-container-low/80 backdrop-blur-md rounded-2xl border border-white/5 p-6">
-                      <span className="material-symbols-outlined text-secondary text-[32px] mb-4">mail</span>
-                      <h3 className="text-on-surface font-medium text-lg mb-2">Contact Us</h3>
-                      <p className="text-on-surface-variant text-sm mb-4">Need direct assistance? Our team is here to help you get the most out of QueryTalk AI.</p>
-                      <button className="bg-secondary-container text-on-secondary-container px-4 py-2 rounded-lg font-medium text-sm hover:bg-secondary-container/90 transition-colors">Email Support</button>
+                )}
+                {activeTab === 'notifications' && (
+                    <div className="flex flex-col mt-4 max-w-2xl">
+                        <h2 className="font-display text-headline-sm font-bold text-primary mb-6 flex items-center gap-2"><span className="material-symbols-outlined">notifications</span> Notifications</h2>
+                        <div className="bg-surface-container-low/80 backdrop-blur-md rounded-2xl border border-white/5 p-6 flex flex-col gap-4">
+                            <div className="flex gap-4 items-start pb-4 border-b border-white/5">
+                                <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center text-primary shrink-0">
+                                    <span className="material-symbols-outlined">database</span>
+                                </div>
+                                <div>
+                                    <h3 className="text-on-surface font-medium">Database Connected</h3>
+                                    <p className="text-on-surface-variant text-sm mt-1">Successfully connected to local SQLite database (demo_v2.db).</p>
+                                    <span className="text-xs text-on-surface-variant/50 mt-2 block">Just now</span>
+                                </div>
+                            </div>
+                            <div className="flex gap-4 items-start pb-4 border-b border-white/5">
+                                <div className="w-10 h-10 rounded-full bg-secondary/20 flex items-center justify-center text-secondary shrink-0">
+                                    <span className="material-symbols-outlined">analytics</span>
+                                </div>
+                                <div>
+                                    <h3 className="text-on-surface font-medium">Analytics Updated</h3>
+                                    <p className="text-on-surface-variant text-sm mt-1">Your dashboard data has been successfully seeded with 500 records.</p>
+                                    <span className="text-xs text-on-surface-variant/50 mt-2 block">2 minutes ago</span>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                     <div className="bg-surface-container-low/80 backdrop-blur-md rounded-2xl border border-white/5 p-6">
                       <span className="material-symbols-outlined text-tertiary-container text-[32px] mb-4">book</span>
@@ -849,6 +850,100 @@ export default function ChatDashboard() {
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+function PreviewTable({ data }) {
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+
+  if (!data || data.length === 0) return null;
+  const keys = Object.keys(data[0]);
+
+  const totalRows = data.length;
+  const totalPages = Math.ceil(totalRows / pageSize);
+  const startIndex = (currentPage - 1) * pageSize;
+  const endIndex = Math.min(startIndex + pageSize, totalRows);
+  const paginatedData = data.slice(startIndex, endIndex);
+
+  return (
+    <div className="bg-surface-container-low/60 backdrop-blur-md rounded-xl border border-white/5 overflow-hidden mt-4">
+      <div className="px-4 py-3 border-b border-white/5 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className="material-symbols-outlined text-primary text-[18px]">table_chart</span>
+          <span className="font-body-sm text-body-sm font-medium text-on-surface">Data Preview</span>
+        </div>
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <span>Rows per page:</span>
+            <select
+              value={pageSize}
+              onChange={(e) => {
+                setPageSize(Number(e.target.value));
+                setCurrentPage(1);
+              }}
+              className="bg-[#1C1E2D] border border-white/10 rounded-lg px-2 py-1 text-on-surface focus:outline-none focus:border-primary text-xs"
+            >
+              <option value={10}>10</option>
+              <option value={25}>25</option>
+              <option value={50}>50</option>
+              <option value={100}>100</option>
+            </select>
+          </div>
+          <span className="text-xs font-mono text-muted-foreground bg-white/5 px-2.5 py-0.5 rounded-full border border-white/10">
+            {totalRows} row{totalRows !== 1 ? 's' : ''}
+          </span>
+        </div>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-left font-body-sm text-body-sm">
+          <thead>
+            <tr className="border-b border-white/5 bg-surface-container/30">
+              {keys.map(k => (
+                <th key={k} className="px-4 py-3 font-medium text-on-surface-variant">{k}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-white/5">
+            {paginatedData.map((row, i) => (
+              <tr key={i} className="hover:bg-white/[0.02] transition-colors">
+                {keys.map(k => (
+                  <td key={k} className="px-4 py-3 text-on-surface">{row[k]}</td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Pagination Bar */}
+      {totalPages > 1 && (
+        <div className="px-4 py-3 border-t border-white/5 flex items-center justify-between bg-surface-container/10 font-body-sm text-xs text-muted-foreground">
+          <div>
+            Showing <span className="text-on-surface font-medium">{startIndex + 1}-{endIndex}</span> of <span className="text-on-surface font-medium">{totalRows}</span> rows
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+              disabled={currentPage === 1}
+              className="w-8 h-8 rounded-lg flex items-center justify-center border border-white/10 bg-white/5 text-on-surface hover:bg-white/10 disabled:opacity-30 disabled:pointer-events-none transition-all"
+            >
+              <span className="material-symbols-outlined text-[16px]">chevron_left</span>
+            </button>
+            <span className="font-mono">
+              Page {currentPage} of {totalPages}
+            </span>
+            <button
+              onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+              disabled={currentPage === totalPages}
+              className="w-8 h-8 rounded-lg flex items-center justify-center border border-white/10 bg-white/5 text-on-surface hover:bg-white/10 disabled:opacity-30 disabled:pointer-events-none transition-all"
+            >
+              <span className="material-symbols-outlined text-[16px]">chevron_right</span>
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -24,51 +24,32 @@ def chat_endpoint(request: Request, chat_req: ChatRequest, db: Session = Depends
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"LLM Generation Error: {str(e)}")
 
-    max_retries = 2
-    attempt = 0
-    success = False
-    data = None
-    last_error = None
-
-    while attempt <= max_retries:
-        if not is_safe_query(sql_query):
-            return {
-                "reply": "I'm sorry, but I cannot execute that query due to security restrictions.",
-                "sql": sql_query,
-                "data": None
-            }
-
-        try:
-            result = db.execute(text(sql_query))
-            rows = result.fetchall()
-            columns = result.keys()
-            data = [dict(zip(columns, row)) for row in rows]
-            success = True
-            break
-        except Exception as e:
-            last_error = str(e)
-            attempt += 1
-            if attempt <= max_retries:
-                try:
-                    api_key = request.headers.get("X-API-Key")
-                    sql_query = llm_orchestrator.correct_sql(
-                        user_query=user_query,
-                        schema_info=schema_info,
-                        failed_sql=sql_query,
-                        error_message=last_error,
-                        dialect=dialect,
-                        api_key=api_key
-                    )
-                except Exception as llm_err:
-                    last_error = f"{last_error} (Self-correction failed: {str(llm_err)})"
-                    break
-            else:
-                break
-
-    if not success:
+    # Intercept schema mismatch / unrelated question responses
+    sql_lower = sql_query.lower().strip()
+    if "cannot answer" in sql_lower or "not related" in sql_lower:
         return {
-            "reply": f"Error executing query: {last_error}",
-            "sql": sql_query,
+            "reply": "I'm sorry, but your question does not seem to be related to the available database schema. Please ask a question about the data in the database.",
+            "sql": None,
+            "data": None
+        }
+
+    if not is_safe_query(sql_query):
+        return {
+            "reply": "I'm sorry, but I cannot execute that query due to security restrictions.",
+            "sql": None,
+            "data": None
+        }
+
+    try:
+        result = db.execute(text(sql_query))
+        rows = result.fetchall()
+        columns = result.keys()
+        data = [dict(zip(columns, row)) for row in rows]
+    
+    except Exception as e:
+        return {
+            "reply": f"Error executing query: {str(e)}",
+            "sql": None,
             "data": None
         }
 
