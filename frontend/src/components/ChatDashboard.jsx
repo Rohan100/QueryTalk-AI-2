@@ -332,68 +332,39 @@ export default function ChatDashboard() {
                             </div>
                           </div>
                         ) : (
-                            chatHistory.map((msg, idx) => (
-                                <div key={idx} className="animate-fade-up">
-                                    {msg.role === 'user' ? (
-                                        <div className="flex justify-end mb-6">
-                                            <div className="text-white px-5 py-3.5 rounded-2xl rounded-tr-sm max-w-[75%] text-sm leading-relaxed shadow-lg" style={{ background: '#1C1E2D', border: '1px solid #2A2D3D' }}>
-                                                {msg.content}
-                                            </div>
-                                        </div>
-                                    ) : (
-                                        <div className="flex items-start gap-3 max-w-[88%] mb-6">
-                                            <div className="w-8 h-8 rounded-xl bg-primary/12 border border-primary/25 flex items-center justify-center shrink-0 mt-0.5">
-                                                <span className="material-symbols-outlined text-primary text-[16px]" style={{ fontVariationSettings: "'FILL' 1" }}>neurology</span>
-                                            </div>
-                                            <div className="flex flex-col gap-3 w-full min-w-0">
-                                                <div className="text-white/90 text-sm leading-relaxed markdown-content pt-1">
-                                                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                                                        {msg.content}
-                                                    </ReactMarkdown>
-                                                </div>
-                                                {msg.sql && (
-                                                    <div className="rounded-xl overflow-hidden border border-outline shadow-xl mt-1">
-                                                        <div className="flex items-center justify-between px-4 py-2 border-b border-outline bg-background/70">
-                                                            <div className="flex items-center gap-2">
-                                                                <span className="w-2.5 h-2.5 rounded-full bg-error/60" />
-                                                                <span className="w-2.5 h-2.5 rounded-full bg-amber-400/60" />
-                                                                <span className="w-2.5 h-2.5 rounded-full bg-emerald-400/60" />
-                                                                <span className="ml-2 font-mono text-[11px] text-muted-foreground">SQL Query</span>
-                                                            </div>
-                                                            <button
-                                                                onClick={() => handleCopySql(msg.sql, idx)}
-                                                                className="flex items-center gap-1.5 px-2 py-1 rounded text-[11px] font-mono text-muted-foreground hover:text-white hover:bg-white/5 transition-all active:scale-95"
-                                                                title="Copy SQL Query"
-                                                            >
-                                                                <span className="material-symbols-outlined text-[13px]">
-                                                                    {copiedIndex === idx ? 'done' : 'content_copy'}
-                                                                </span>
-                                                                <span>{copiedIndex === idx ? 'Copied' : 'Copy'}</span>
-                                                            </button>
-                                                        </div>
-                                                        <div className="p-4 font-mono text-[12px] text-primary/80 leading-relaxed overflow-x-auto bg-black/40">
-                                                            <pre><code>{msg.sql}</code></pre>
-                                                        </div>
-                                                    </div>
-                                                )}
-                                                {msg.data && renderTable(msg.data)}
-                                                {msg.data && renderChart(msg.data)}
-                                            </div>
-                                        </div>
-                                    )}
-                                </div>
-                            ))
-                        )}
-                        
-                        {loading && (
-                            <div className="flex items-start gap-3 max-w-[88%]">
-                                <div className="w-8 h-8 rounded-xl bg-primary/12 border border-primary/25 flex items-center justify-center shrink-0">
-                                    <span className="material-symbols-outlined text-primary text-[16px]" style={{ fontVariationSettings: "'FILL' 1" }}>neurology</span>
-                                </div>
-                                <div className="flex items-center gap-1.5 h-9 px-4 rounded-xl border border-outline w-fit" style={{ background: '#1C1E2D' }}>
-                                    <span className="w-1.5 h-1.5 rounded-full bg-primary/70 animate-bounce" />
-                                    <span className="w-1.5 h-1.5 rounded-full bg-primary/70 animate-bounce" style={{ animationDelay: '0.18s' }} />
-                                    <span className="w-1.5 h-1.5 rounded-full bg-primary/70 animate-bounce" style={{ animationDelay: '0.36s' }} />
+                          <div className="flex items-start gap-3 max-w-[88%] mb-6">
+                            <div className="w-8 h-8 rounded-xl bg-primary/12 border border-primary/25 flex items-center justify-center shrink-0 mt-0.5">
+                              <span className="material-symbols-outlined text-primary text-[16px]" style={{ fontVariationSettings: "'FILL' 1" }}>neurology</span>
+                            </div>
+                            <div className="flex flex-col gap-3 w-full min-w-0">
+                              <div className="text-white/90 text-sm leading-relaxed markdown-content pt-1">
+                                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                  {msg.content}
+                                </ReactMarkdown>
+                              </div>
+                              {msg.sql && (
+                                <div className="rounded-xl overflow-hidden border border-outline shadow-xl mt-1">
+                                  <div className="flex items-center justify-between px-4 py-2 border-b border-outline bg-background/70">
+                                    <div className="flex items-center gap-2">
+                                      <span className="w-2.5 h-2.5 rounded-full bg-error/60" />
+                                      <span className="w-2.5 h-2.5 rounded-full bg-amber-400/60" />
+                                      <span className="w-2.5 h-2.5 rounded-full bg-emerald-400/60" />
+                                      <span className="ml-2 font-mono text-[11px] text-muted-foreground">SQL Query</span>
+                                    </div>
+                                    <button
+                                      onClick={() => handleCopySql(msg.sql, idx)}
+                                      className="flex items-center gap-1.5 px-2 py-1 rounded text-[11px] font-mono text-muted-foreground hover:text-white hover:bg-white/5 transition-all active:scale-95"
+                                      title="Copy SQL Query"
+                                    >
+                                      <span className="material-symbols-outlined text-[13px]">
+                                        {copiedIndex === idx ? 'done' : 'content_copy'}
+                                      </span>
+                                      <span>{copiedIndex === idx ? 'Copied' : 'Copy'}</span>
+                                    </button>
+                                  </div>
+                                  <div className="p-4 font-mono text-[12px] text-primary/80 leading-relaxed overflow-x-auto bg-black/40">
+                                    <pre><code>{msg.sql}</code></pre>
+                                  </div>
                                 </div>
                               )}
                               {msg.data && renderTable(msg.data)}
@@ -647,7 +618,7 @@ export default function ChatDashboard() {
                 </div>
               )}
 
-              {/* {activeTab === 'settings' && (
+              {activeTab === 'settings' && (
                     <div className="flex flex-col mt-4 max-w-2xl">
                         <h2 className="font-display text-headline-sm font-bold text-primary mb-6 flex items-center gap-2"><span className="material-symbols-outlined">settings</span> Settings</h2>
                         <div className="bg-surface-container-low/80 backdrop-blur-md rounded-2xl border border-white/5 p-6 flex flex-col gap-6">
@@ -738,55 +709,7 @@ export default function ChatDashboard() {
                             </div>
                         </div>
                     </div>
-                    <div className="bg-surface-container-low/80 backdrop-blur-md rounded-2xl border border-white/5 p-6">
-                      <span className="material-symbols-outlined text-tertiary-container text-[32px] mb-4">book</span>
-                      <h3 className="text-on-surface font-medium text-lg mb-2">Documentation</h3>
-                      <p className="text-on-surface-variant text-sm mb-4">Read our detailed guides on database connections, query optimization, and more.</p>
-                      <button className="bg-surface-container-high text-on-surface border border-white/10 px-4 py-2 rounded-lg font-medium text-sm hover:bg-surface-variant transition-colors">View Docs</button>
-                    </div>
-                  </div>
-
-                  <h3 className="font-display text-title-lg font-medium text-on-surface mb-4 mt-4">Frequently Asked Questions</h3>
-                  <div className="flex flex-col gap-3">
-                    <div className="bg-surface-container-high/50 rounded-xl p-4 border border-white/5">
-                      <h4 className="text-on-surface font-medium mb-2">How is my API key stored?</h4>
-                      <p className="text-on-surface-variant text-sm leading-relaxed">Your API key is stored locally in your browser's localStorage and is sent securely via headers to our backend. It is never persisted in our database.</p>
-                    </div>
-                    <div className="bg-surface-container-high/50 rounded-xl p-4 border border-white/5">
-                      <h4 className="text-on-surface font-medium mb-2">What databases are supported?</h4>
-                      <p className="text-on-surface-variant text-sm leading-relaxed">Currently, we support SQLite, PostgreSQL, and MySQL. We are constantly working on adding more database integrations.</p>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {activeTab === 'notifications' && (
-                <div className="flex flex-col mt-4 max-w-2xl">
-                  <h2 className="font-display text-headline-sm font-bold text-primary mb-6 flex items-center gap-2"><span className="material-symbols-outlined">notifications</span> Notifications</h2>
-                  <div className="bg-surface-container-low/80 backdrop-blur-md rounded-2xl border border-white/5 p-6 flex flex-col gap-4">
-                    <div className="flex gap-4 items-start pb-4 border-b border-white/5">
-                      <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center text-primary shrink-0">
-                        <span className="material-symbols-outlined">database</span>
-                      </div>
-                      <div>
-                        <h3 className="text-on-surface font-medium">Database Connected</h3>
-                        <p className="text-on-surface-variant text-sm mt-1">Successfully connected to local SQLite database (demo_v2.db).</p>
-                        <span className="text-xs text-on-surface-variant/50 mt-2 block">Just now</span>
-                      </div>
-                    </div>
-                    <div className="flex gap-4 items-start pb-4 border-b border-white/5">
-                      <div className="w-10 h-10 rounded-full bg-secondary/20 flex items-center justify-center text-secondary shrink-0">
-                        <span className="material-symbols-outlined">analytics</span>
-                      </div>
-                      <div>
-                        <h3 className="text-on-surface font-medium">Analytics Updated</h3>
-                        <p className="text-on-surface-variant text-sm mt-1">Your dashboard data has been successfully seeded with 500 records.</p>
-                        <span className="text-xs text-on-surface-variant/50 mt-2 block">2 minutes ago</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
+                )}
               {activeTab === 'security' && (
                 <div className="flex flex-col mt-4 max-w-2xl">
                   <h2 className="font-display text-headline-sm font-bold text-primary mb-6 flex items-center gap-2"><span className="material-symbols-outlined">shield</span> Security & Access</h2>
