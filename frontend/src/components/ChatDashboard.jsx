@@ -28,6 +28,18 @@ export default function ChatDashboard() {
   const [activeTab, setActiveTab] = useState('chat');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const messagesEndRef = useRef(null);
+  const [copiedIndex, setCopiedIndex] = useState(null);
+
+  const handleCopySql = (sqlText, index) => {
+    navigator.clipboard.writeText(sqlText).then(() => {
+      setCopiedIndex(index);
+      setTimeout(() => {
+        setCopiedIndex(null);
+      }, 2000);
+    }).catch(err => {
+      console.error('Failed to copy text: ', err);
+    });
+  };
 
   // Auto-reconnect when arriving via URL (e.g. page refresh)
   useEffect(() => {
@@ -332,11 +344,23 @@ export default function ChatDashboard() {
                                                 </div>
                                                 {msg.sql && (
                                                     <div className="rounded-xl overflow-hidden border border-outline shadow-xl mt-1">
-                                                        <div className="flex items-center gap-2 px-4 py-2 border-b border-outline bg-background/70">
-                                                            <span className="w-2.5 h-2.5 rounded-full bg-error/60" />
-                                                            <span className="w-2.5 h-2.5 rounded-full bg-amber-400/60" />
-                                                            <span className="w-2.5 h-2.5 rounded-full bg-emerald-400/60" />
-                                                            <span className="ml-2 font-mono text-[11px] text-muted-foreground">SQL Query</span>
+                                                        <div className="flex items-center justify-between px-4 py-2 border-b border-outline bg-background/70">
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="w-2.5 h-2.5 rounded-full bg-error/60" />
+                                                                <span className="w-2.5 h-2.5 rounded-full bg-amber-400/60" />
+                                                                <span className="w-2.5 h-2.5 rounded-full bg-emerald-400/60" />
+                                                                <span className="ml-2 font-mono text-[11px] text-muted-foreground">SQL Query</span>
+                                                            </div>
+                                                            <button
+                                                                onClick={() => handleCopySql(msg.sql, idx)}
+                                                                className="flex items-center gap-1.5 px-2 py-1 rounded text-[11px] font-mono text-muted-foreground hover:text-white hover:bg-white/5 transition-all active:scale-95"
+                                                                title="Copy SQL Query"
+                                                            >
+                                                                <span className="material-symbols-outlined text-[13px]">
+                                                                    {copiedIndex === idx ? 'done' : 'content_copy'}
+                                                                </span>
+                                                                <span>{copiedIndex === idx ? 'Copied' : 'Copy'}</span>
+                                                            </button>
                                                         </div>
                                                         <div className="p-4 font-mono text-[12px] text-primary/80 leading-relaxed overflow-x-auto bg-black/40">
                                                             <pre><code>{msg.sql}</code></pre>
