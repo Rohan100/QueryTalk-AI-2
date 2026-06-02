@@ -165,3 +165,12 @@ def get_schema_info() -> str:
     except Exception as e:
         return f"Schema unavailable: {e}"
 
+
+def get_dialect_name() -> str:
+    """Return the dialect name of the currently connected user database (e.g. 'sqlite', 'postgresql', 'mysql')."""
+    global _user_engine
+    if _user_engine is not None:
+        return _user_engine.dialect.name
+    return "sqlite"
+
+
