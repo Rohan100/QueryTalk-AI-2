@@ -44,10 +44,11 @@ def chat_endpoint(request: Request, chat_req: ChatRequest, db: Session = Depends
         rows = result.fetchall()
         columns = result.keys()
         data = [dict(zip(columns, row)) for row in rows]
+    
     except Exception as e:
         return {
             "reply": f"Error executing query: {str(e)}",
-            "sql": sql_query,
+            "sql": None,
             "data": None
         }
 
