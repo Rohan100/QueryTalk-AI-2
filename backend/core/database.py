@@ -156,12 +156,63 @@ def get_schema_info() -> str:
         return "No database connected."
     try:
         inspector = inspect(_user_engine)
-        tables = inspector.get_table_names()
+        default_schema = inspector.default_schema_name
+        dialect_name = _user_engine.dialect.name
+
+        if dialect_name in {"mysql", "sqlite"}:
+            schema_names = [default_schema]
+        else:
+            try:
+                schema_names = inspector.get_schema_names()
+            except Exception:
+                schema_names = [default_schema]
+
+        user_schemas = [
+            schema_name
+            for schema_name in schema_names
+            if schema_name not in {"information_schema", "pg_catalog"}
+            and not (schema_name or "").startswith("pg_toast")
+            and not (schema_name or "").startswith("pg_temp")
+        ] or [None]
+
+        # Prioritize default schema first so its tables are guaranteed to be listed first
+        if default_schema in user_schemas:
+            user_schemas = [s for s in user_schemas if s != default_schema]
+            user_schemas.insert(0, default_schema)
+        elif default_schema is not None:
+            user_schemas.insert(0, default_schema)
+
         lines = []
-        for table in tables[:30]:
-            cols = [c["name"] for c in inspector.get_columns(table)]
-            lines.append(f"  {table} ({', '.join(cols)})")
+        count = 0
+        for schema_name in user_schemas:
+            effective_schema = None if schema_name == default_schema else schema_name
+            try:
+                table_names = inspector.get_table_names(schema=effective_schema)
+            except Exception:
+                continue
+            for table_name in table_names:
+                if count >= 50:
+                    break
+                try:
+                    cols = [c["name"] for c in inspector.get_columns(table_name, schema=effective_schema)]
+                    full_name = f"{schema_name}.{table_name}" if effective_schema else table_name
+                    lines.append(f"  {full_name} ({', '.join(cols)})")
+                    count += 1
+                except Exception:
+                    continue
+            if count >= 50:
+                break
+
         return "Tables:\n" + "\n".join(lines) if lines else "No tables found."
     except Exception as e:
         return f"Schema unavailable: {e}"
+
+
+def get_dialect_name() -> str:
+    """Return the dialect name of the currently connected user database (e.g. 'sqlite', 'postgresql', 'mysql')."""
+    global _user_engine
+    if _user_engine is not None:
+        return _user_engine.dialect.name
+    return "sqlite"
+
 
