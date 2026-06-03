@@ -86,6 +86,40 @@ Ensure that table names and column names are properly quoted according to the ru
         result = result.replace('```sql', '').replace('```', '').strip()
         return result
 
+    def explain_error(self, user_query: str, sql_query: str, error_message: str, api_key: str = None) -> str:
+        client = Groq(api_key=api_key) if api_key else self.client
+        if not client:
+            return f"I encountered an error executing the query: {error_message}"
+
+        system_prompt = (
+            "You are a helpful and polite database assistant. Translate a raw technical database/SQL execution error "
+            "into a user-friendly, clean, and helpful natural language explanation. "
+            "Do NOT include raw python stack traces or driver details in your response. "
+            "Instead, summarize what likely went wrong (e.g. invalid syntax, missing column/table, or a query parameter mismatch) "
+            "and suggest how the user might rephrase or correct it. Keep it friendly and concise."
+        )
+        user_prompt = (
+            f"User's original question: {user_query}\n"
+            f"SQL attempted: {sql_query}\n"
+            f"Database error details: {error_message}\n\n"
+            f"Please generate a polite, readable, and helpful explanation of this error for the user, hiding technical details."
+        )
+
+        try:
+            response = client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                temperature=0.3,
+                max_tokens=512
+            )
+            result = response.choices[0].message.content.strip()
+            return result
+        except Exception as e:
+            return f"I encountered an error trying to execute the query against your database: {error_message}"
+
 
     def summarize_results(self, user_query: str, sql_query: str, data_result: list, api_key: str = None) -> str:
         client = Groq(api_key=api_key) if api_key else self.client

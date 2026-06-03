@@ -66,8 +66,14 @@ def chat_endpoint(request: Request, chat_req: ChatRequest, db: Session = Depends
                 break
 
     if not success:
+        try:
+            api_key = request.headers.get("X-API-Key")
+            error_explanation = llm_orchestrator.explain_error(user_query, sql_query, last_error, api_key)
+        except Exception as explain_err:
+            error_explanation = f"Error executing query: {last_error}"
+
         return {
-            "reply": f"Error executing query: {last_error}",
+            "reply": error_explanation,
             "sql": sql_query,
             "data": None
         }
