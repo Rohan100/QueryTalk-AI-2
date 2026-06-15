@@ -50,7 +50,7 @@ def chat_endpoint(request: Request, chat_req: ChatRequest, db: Session = Depends
                         if active_conn:
                             conn_str = decrypt_password(active_conn.connection_string_enc)
                             if conn_str:
-                                db_core.set_engine(conn_str)
+                                db_core.set_engine(conn_str, connection_id=str(active_conn.id))
                                 db = db_core.SessionLocal()
             finally:
                 app_db.close()

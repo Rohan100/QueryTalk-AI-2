@@ -122,28 +122,31 @@ export default function ChatDashboard() {
     }
   }, [activeTab, dbStatus, getToken]);
 
+  const fetchTables = async (forceRefresh = false) => {
+    if (!connectionId) return;
+    setLoadingTables(true);
+    setTablesError('');
+    try {
+      const clerkToken = await getToken();
+      const url = `/api/db/connections/${connectionId}/schema${forceRefresh ? '?refresh=true' : ''}`;
+      const res = await axios.get(url, {
+        headers: { Authorization: `Bearer ${clerkToken}` },
+      });
+      setTablesData(res.data.tables || []);
+      if (res.data.tables && res.data.tables.length > 0) {
+        setExpandedTable(res.data.tables[0].full_name);
+      }
+    } catch (e) {
+      console.error(e);
+      setTablesError('Failed to load table structure. Make sure you are connected to a database.');
+    } finally {
+      setLoadingTables(false);
+    }
+  };
+
   useEffect(() => {
     if (activeTab === 'tables' && connectionId) {
-      const fetchTables = async () => {
-        setLoadingTables(true);
-        setTablesError('');
-        try {
-          const clerkToken = await getToken();
-          const res = await axios.get(`/api/db/connections/${connectionId}/schema`, {
-            headers: { Authorization: `Bearer ${clerkToken}` },
-          });
-          setTablesData(res.data.tables || []);
-          if (res.data.tables && res.data.tables.length > 0) {
-            setExpandedTable(res.data.tables[0].full_name);
-          }
-        } catch (e) {
-          console.error(e);
-          setTablesError('Failed to load table structure. Make sure you are connected to a database.');
-        } finally {
-          setLoadingTables(false);
-        }
-      };
-      fetchTables();
+      fetchTables(false);
     }
   }, [activeTab, connectionId, getToken]);
 
@@ -443,11 +446,22 @@ export default function ChatDashboard() {
                       <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>table_chart</span>
                       Table Structure
                     </h2>
-                    {tablesData.length > 0 && (
-                      <span className="font-label-mono text-label-mono text-on-surface-variant bg-surface-container-highest px-3 py-1 rounded-full border border-white/10">
-                        {tablesData.length} table{tablesData.length !== 1 ? 's' : ''}
-                      </span>
-                    )}
+                    <div className="flex items-center gap-3">
+                      <button
+                        onClick={() => fetchTables(true)}
+                        disabled={loadingTables}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-white/5 border border-white/10 text-muted-foreground hover:text-white hover:bg-white/10 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                        title="Force refresh schema cache from the live database"
+                      >
+                        <span className={`material-symbols-outlined text-[15px] ${loadingTables ? 'animate-spin' : ''}`}>sync</span>
+                        <span>Sync Schema</span>
+                      </button>
+                      {tablesData.length > 0 && (
+                        <span className="font-label-mono text-label-mono text-on-surface-variant bg-surface-container-highest px-3 py-1 rounded-full border border-white/10">
+                          {tablesData.length} table{tablesData.length !== 1 ? 's' : ''}
+                        </span>
+                      )}
+                    </div>
                   </div>
 
                   {loadingTables && (
