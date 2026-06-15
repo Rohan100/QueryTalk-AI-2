@@ -59,14 +59,15 @@ def get_app_db():
 # ---------------------------------------------------------------------------
 _user_engine = None
 _user_session_factory = None
+_active_connection_id = None
 
 
-def set_engine(connection_string: str):
+def set_engine(connection_string: str, connection_id: str = None):
     """
     Set the active user database engine.
     Called when the user successfully connects a new database.
     """
-    global _user_engine, _user_session_factory
+    global _user_engine, _user_session_factory, _active_connection_id
 
     connect_args = {}
     if connection_string.startswith("postgresql") and "sslmode" not in connection_string:
@@ -82,6 +83,7 @@ def set_engine(connection_string: str):
         autoflush=False,
         bind=_user_engine,
     )
+    _active_connection_id = connection_id
 
 
 # Bootstrap with the default demo SQLite DB so the app always has an engine
@@ -154,6 +156,29 @@ def get_schema_info() -> str:
     """Return schema information for the currently connected user database."""
     if _user_engine is None:
         return "No database connected."
+
+    global _active_connection_id
+    if _active_connection_id:
+        try:
+            db = AppSessionLocal()
+            try:
+                from core.models import DatabaseConnection
+                import uuid
+                conn_uuid = uuid.UUID(_active_connection_id) if isinstance(_active_connection_id, str) else _active_connection_id
+                conn = db.query(DatabaseConnection).filter(DatabaseConnection.id == conn_uuid).first()
+                if conn and conn.schema_cache:
+                    lines = []
+                    for table in conn.schema_cache:
+                        full_name = table.get("full_name") or table.get("name")
+                        cols = [c["name"] for c in table.get("columns", [])]
+                        lines.append(f"  {full_name} ({', '.join(cols)})")
+                    if lines:
+                        return "Tables:\n" + "\n".join(lines)
+            finally:
+                db.close()
+        except Exception as e:
+            print(f"Error reading schema cache in get_schema_info: {e}")
+
     try:
         inspector = inspect(_user_engine)
         default_schema = inspector.default_schema_name
