@@ -12,14 +12,16 @@ class LLMOrchestrator:
             self.client = Groq(api_key=self.api_key)
 
         self.history = []
+        self.model = os.getenv("LLM_Model", "llama-3.3-70b-versatile")
 
     def _trim_history(self):
-        # Keep last 10 messages (5 user, 5 assistant)
         if len(self.history) > 10:
             self.history = self.history[-10:]
 
     def generate_sql(self, user_query: str, schema_info: str, api_key: str = None, dialect: str = "sqlite") -> str:
         client = Groq(api_key=api_key) if api_key else self.client
+        if not client:
+            raise ValueError("Groq API key is missing or invalid. Please configure GROQ_API_KEY in the environment or provide it in the request headers.")
 
         dialect_instructions = ""
         db_dialect = (dialect or "sqlite").lower()
@@ -39,6 +41,15 @@ class LLMOrchestrator:
                 "1. Use backticks (`) for quoting identifiers (table names, column names) that contain spaces or special characters, for example: `Sales Data`, `Quantity Ordered`.\n"
                 "2. Ensure all table and column names match the schema exactly, keeping spaces and casing if they are present in the schema, and enclosing them in backticks."
             )
+        elif db_dialect == "snowflake":
+            dialect_instructions = (
+                "CRITICAL: The database is Snowflake. You MUST generate valid Snowflake syntax:\n"
+                "1. DO NOT use double quotes or backticks to quote identifiers (table names, column names, schema names) unless they contain spaces or special characters. Keep them unquoted.\n"
+                "2. Unquoted identifiers are case-insensitive and resolve to uppercase in Snowflake.\n"
+                "3. If an identifier MUST be quoted (e.g., because it contains spaces), use double quotes (\") and preserve the exact uppercase or lowercase casing as shown in the schema (e.g. if the schema shows a table as NATION or TPCH_SF1.NATION, use TPCH_SF1.NATION or \"TPCH_SF1\".\"NATION\" — NEVER use lowercase \"nation\" or \"n_name\" if they are uppercase in the schema).\n"
+                "4. If qualifying a table with its schema, quote each part separately (e.g., \"SCHEMA\".\"TABLE\" instead of \"SCHEMA.TABLE\").\n"
+                "5. NEVER use backticks (`)."
+            )
         else:
             dialect_instructions = (
                 f"CRITICAL: The database is {db_dialect.upper()}. You MUST generate valid standard SQL syntax:\n"
@@ -47,68 +58,7 @@ class LLMOrchestrator:
                 "3. Ensure all table and column names match the schema exactly, keeping spaces and casing if they are present in the schema, and enclosing them in double quotes."
             )
 
-        system_prompt = f"""You are an expert SQL generator. Your task is to convert the user's natural language question into a valid SQL query.
-Use the following database schema to form your query:
-{schema_info}
-
-{dialect_instructions}
-
-Return ONLY the raw SQL query, without any markdown formatting or explanation. Ensure it's read-only."""
-
-        messages = [{"role": "system", "content": system_prompt}]
-        messages.extend(self.history)
-        messages.append({"role": "user", "content": user_query})
-
-        response = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=messages,
-            temperature=0.1,
-            max_tokens=1024
-        )
-        result = response.choices[0].message.content.strip()
-
-        # Clean any potential markdown formatting
-        result = result.replace('```sql', '').replace('```', '').strip()
-
-        # Update history
-        self.history.append({"role": "user", "content": user_query})
-        self.history.append({"role": "assistant", "content": result})
-        self._trim_history()
-
-        return result
-
-
-    def summarize_results(self, user_query: str, sql_query: str, data_result: list, api_key: str = None) -> str:
-        client = Groq(api_key=api_key) if api_key else self.client
-        if not client:
-            return "Mock summary because API Key is missing."
-
-        system_prompt = "You are a data analyst. Provide a brief, insightful summary of the data retrieved."
-        user_prompt = f"User question: {user_query}\nSQL executed: {sql_query}\nData result: {data_result}\n\nProvide a natural language summary and insights."
-
-        try:
-            response = client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ],
-                temperature=0.1,
-                max_tokens=1024
-            )
-            result = response.choices[0].message.content.strip()
-            return result
-        except Exception as e:
-            return "Could not generate summary due to LLM error."
-
-
-    def analyze_schema_for_analytics(self, schema_info: str, api_key: str = None) -> dict:
-        import json
-        client = Groq(api_key=api_key) if api_key else self.client
-        if not client:
-            return {}
-
-        system_prompt = """You are a senior database engineer and SQL generation expert.
+        system_prompt = f"""You are a senior database engineer and SQL generation expert.
 
 Your task is to convert the user's natural language request into a safe, syntactically correct, read-only SQL query using ONLY the provided database schema.
 
@@ -284,11 +234,136 @@ RULES:
 USER REQUEST:
 {user_query}
 
-"""
+
+{dialect_instructions}
+
+Return ONLY the raw SQL query, without any markdown formatting or explanation. Ensure it's read-only."""
+
+        messages = [{"role": "system", "content": system_prompt}]
+        messages.extend(self.history)
+        messages.append({"role": "user", "content": user_query})
+
+        response = client.chat.completions.create(
+            model=self.model,
+            messages=messages,
+            temperature=0.1,
+            max_tokens=1024
+        )
+        result = response.choices[0].message.content.strip()
+
+        # Clean any potential markdown formatting
+        result = result.replace('```sql', '').replace('```', '').strip()
+
+        # Update history
+        self.history.append({"role": "user", "content": user_query})
+        self.history.append({"role": "assistant", "content": result})
+        self._trim_history()
+
+        return result
+
+    def correct_sql(self, user_query: str, schema_info: str, failed_sql: str, error_message: str, api_key: str = None, dialect: str = "sqlite") -> str:
+        client = Groq(api_key=api_key) if api_key else self.client
+        if not client:
+            raise ValueError("Groq API key is missing or invalid. Please configure GROQ_API_KEY in the environment or provide it in the request headers.")
+
+        db_dialect = (dialect or "sqlite").lower()
+        dialect_clause = f" {db_dialect.upper()}" if db_dialect else ""
+
+        if db_dialect == "snowflake":
+            dialect_rules = (
+                "For Snowflake, do NOT use double quotes or backticks to quote identifiers (table names, column names, schema names) unless they contain spaces or special characters. Keep them unquoted.\n"
+                "Unquoted identifiers are case-insensitive and resolve to uppercase in Snowflake.\n"
+                "If an identifier MUST be quoted (e.g., because it contains spaces), use double quotes (\") and preserve the exact uppercase or lowercase casing as shown in the schema (e.g. if the schema shows a table as NATION or TPCH_SF1.NATION, use TPCH_SF1.NATION or \"TPCH_SF1\".\"NATION\" — NEVER use lowercase \"nation\" or \"n_name\" if they are uppercase in the schema).\n"
+                "If qualifying a table with its schema, quote each part separately (e.g., \"SCHEMA\".\"TABLE\" instead of \"SCHEMA.TABLE\").\n"
+                "Never use backticks (`)."
+            )
+        elif db_dialect == "postgresql":
+            dialect_rules = (
+                "Ensure that table names and column names are properly quoted according to the rules of the PostgreSQL SQL dialect (for example, double quotes (\") must be used to enclose identifiers that contain spaces or capital letters, like \"Sales Data\", and backticks (`) are invalid. Avoid backticks entirely)."
+            )
+        elif db_dialect == "mysql":
+            dialect_rules = (
+                "Ensure that table names and column names are properly quoted according to the rules of the MySQL SQL dialect (for example, backticks (`) or double quotes (\") can be used to enclose identifiers)."
+            )
+        else:
+            dialect_rules = (
+                f"Ensure that table names and column names are properly quoted according to the rules of the {db_dialect.upper()} SQL dialect. Avoid backticks (`) entirely if the dialect is PostgreSQL."
+            )
+
+        system_prompt = f"""You are an expert SQL troubleshooter. A previously generated{dialect_clause} SQL query failed with an error.
+Your task is to correct the SQL query to fix the error based on the database schema and the error message provided.
+
+Use the following database schema:
+{schema_info}
+
+User's original question:
+{user_query}
+
+Failed SQL query:
+{failed_sql}
+
+Error message:
+{error_message}
+
+Return ONLY the corrected raw{dialect_clause} SQL query, without any markdown formatting or explanation. Ensure it's read-only.
+{dialect_rules}"""
+
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": "Please output only the corrected query."}
+        ]
 
         try:
             response = client.chat.completions.create(
-                model=os.getenv("LLM_Model"),
+                model=self.model,
+                messages=messages,
+                temperature=0.1,
+                max_tokens=1024
+            )
+            result = response.choices[0].message.content.strip()
+            result = result.replace('```sql', '').replace('```', '').strip()
+            return result
+        except Exception as e:
+            return f"Could not correct SQL due to LLM error: {str(e)}"
+
+
+    def summarize_results(self, user_query: str, sql_query: str, data_result: list, api_key: str = None) -> str:
+        client = Groq(api_key=api_key) if api_key else self.client
+        if not client:
+            return "Mock summary because API Key is missing."
+
+        system_prompt = "You are a data analyst. Provide a brief, insightful summary of the data retrieved."
+        user_prompt = f"User question: {user_query}\nSQL executed: {sql_query}\nData result: {data_result}\n\nProvide a natural language summary and insights."
+
+        try:
+            response = client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                temperature=0.1,
+                max_tokens=1024
+            )
+            result = response.choices[0].message.content.strip()
+            return result
+        except Exception as e:
+            return "Could not generate summary due to LLM error."
+
+
+    def analyze_schema_for_analytics(self, schema_info: str, api_key: str = None) -> dict:
+        import json
+        client = Groq(api_key=api_key) if api_key else self.client
+        if not client:
+            return {}
+
+        system_prompt = """You are a data analyst. Given a database schema, return a JSON object 
+    describing analytics opportunities: numeric columns, categorical columns, date columns, 
+    suggested chart types, and possible KPIs."""
+
+        try:
+            response = client.chat.completions.create(
+                model=self.model,
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": f"Schema:\n{schema_info}"}
