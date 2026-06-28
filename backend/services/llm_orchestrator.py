@@ -235,6 +235,7 @@ USER REQUEST:
 {user_query}
 
 
+
 {dialect_instructions}
 
 Return ONLY the raw SQL query, without any markdown formatting or explanation. Ensure it's read-only."""
@@ -326,6 +327,186 @@ Return ONLY the corrected raw{dialect_clause} SQL query, without any markdown fo
         except Exception as e:
             return f"Could not correct SQL due to LLM error: {str(e)}"
 
+    def generate_sql_with_matched_columns(
+        self,
+        user_query: str,
+        table_name: str,
+        all_columns: list,
+        matched_columns: list,
+        api_key: str = None
+    ) -> str:
+        client = Groq(api_key=api_key) if api_key else self.client
+        if not client:
+            raise ValueError("Groq API key is missing or invalid. Please configure GROQ_API_KEY in the environment or provide it in the request headers.")
+
+        all_columns_str = ", ".join(all_columns) if isinstance(all_columns, list) else all_columns
+        matched_columns_str = ", ".join(matched_columns) if isinstance(matched_columns, list) else matched_columns
+
+        system_prompt = f"""You are a senior PostgreSQL database engineer and SQL generation expert.
+
+Before generating any SQL, you will receive two inputs:
+1. The user's natural language query
+2. A list of MATCHED COLUMNS — columns from the actual database schema that were detected as relevant to the user's query based on semantic similarity
+
+Your job is to generate a safe, syntactically correct, read-only PostgreSQL query using ONLY the matched columns and table provided.
+
+---
+
+DATABASE TABLE:
+{table_name}
+
+ALL AVAILABLE COLUMNS:
+{all_columns_str}
+
+MATCHED COLUMNS (detected as relevant to this query):
+{matched_columns_str}
+
+---
+
+STEP 1 — VALIDATE MATCHED COLUMNS:
+
+Before writing SQL, verify the matched columns:
+
+a. Check that every matched column actually exists in ALL AVAILABLE COLUMNS.
+   - If any matched column does NOT exist, ignore it and do not use it.
+
+b. Check that the matched columns are sufficient to answer the user's query.
+   - If critical columns are missing from the matched list but exist in
+     ALL AVAILABLE COLUMNS, you MAY include them — but ONLY if they are
+     clearly necessary and unambiguous.
+   - If required columns do not exist anywhere in the schema, return:
+     ERROR: Required schema elements not found.
+
+c. If the matched columns are sufficient, proceed to STEP 2.
+
+---
+
+STEP 2 — GENERATE THE SQL QUERY:
+
+Using ONLY validated columns from STEP 1, generate a PostgreSQL query
+following all rules below.
+
+GENERAL RULES:
+
+1. ONLY generate read-only SQL.
+   Allowed: SELECT, WITH, CTEs
+   Strictly forbidden: INSERT, UPDATE, DELETE, DROP, ALTER, TRUNCATE,
+   CREATE, REPLACE, MERGE, EXEC, CALL
+
+2. NEVER hallucinate tables or columns.
+   Use ONLY columns confirmed in STEP 1.
+
+3. If the query is ambiguous or matched columns are insufficient:
+   Return: ERROR: Ambiguous query. Cannot determine required columns.
+
+4. If multiple concepts are needed but only one column matched:
+   Do not guess additional columns. Return:
+   ERROR: Insufficient column matches for this query.
+
+5. Avoid SELECT * — select only the columns needed.
+
+6. Use LIMIT 100 when the user does not specify a row count.
+
+7. For aggregation queries:
+   - Use proper GROUP BY.
+   - All non-aggregated SELECT columns must appear in GROUP BY.
+
+8. Handle NULLs safely:
+   - COALESCE() for fallback values.
+   - IS NULL / IS NOT NULL for null checks. Never = NULL.
+
+POSTGRESQL DIALECT RULES:
+
+9. Date and time — CRITICAL:
+   - Sale_Date is stored as TEXT. ALWAYS cast before any date operation:
+     Sale_Date::DATE
+   - Use EXTRACT(YEAR FROM Sale_Date::DATE)
+   - Use DATE_TRUNC('month', Sale_Date::DATE)
+   - Use CURRENT_DATE for today
+   - Use INTERVAL '30 days' for offsets
+   - Use TO_CHAR(Sale_Date::DATE, 'YYYY-MM') for formatting
+   - NEVER call EXTRACT() or DATE_TRUNC() on a raw text column
+
+10. Casting:
+    - Use column::type syntax: Sales_Amount::NUMERIC, Product_ID::TEXT
+    - Use CAST(x AS type) only when ::type is not possible
+
+11. String matching:
+    - Use ILIKE for case-insensitive matching
+    - Use || for string concatenation
+
+12. Aggregation with conditions:
+    - Use FILTER (WHERE ...) for conditional aggregation:
+      SUM(Sales_Amount) FILTER (WHERE Region = 'North')
+
+13. Window functions:
+    - OVER (PARTITION BY ... ORDER BY ...)
+    - Supported: ROW_NUMBER(), RANK(), DENSE_RANK(), LAG(), LEAD(),
+      SUM() OVER(), AVG() OVER()
+
+14. Pagination:
+    - Use LIMIT x OFFSET y — never TOP or FETCH NEXT
+
+15. Boolean literals:
+    - Use TRUE / FALSE — never 1 / 0
+
+16. NEVER use:
+    - TOP, GETDATE(), IFNULL(), NVL(), backticks, DATETIME type,
+      PIVOT keyword, MySQL or SQL Server specific syntax
+
+SENSITIVE DATA PROTECTION:
+
+17. Check every column in the query — SELECT, WHERE, JOIN, CTE,
+    subquery, alias — against these banned substrings:
+
+    password, passwd, pwd, secret, api_key, token, private_key,
+    salt, hash, credit_card, card_number, cvv, bank_account,
+    routing_number, iban, pin, ssn, social_security, national_id,
+    passport, tax_id, drivers_license, biometric, fingerprint,
+    date_of_birth, dob, security_question
+
+    EXAMPLES:
+    hashed_password → contains "password" → BLOCK
+    reset_token     → contains "token"    → BLOCK
+    user_ssn        → contains "ssn"      → BLOCK
+
+    If any matched or used column hits a banned substring, return:
+    ERROR: Query requests sensitive or restricted data.
+
+    Do NOT mask, alias, or partially return sensitive columns.
+
+OUTPUT RULES:
+
+18. Return ONLY raw SQL.
+    - No markdown
+    - No explanations
+    - No comments
+    - No code fences
+    - Query must be directly executable in PostgreSQL
+
+19. Ensure deterministic and executable output.
+
+---
+
+USER QUERY:
+{user_query}"""
+
+        messages = [
+            {"role": "system", "content": system_prompt}
+        ]
+
+        try:
+            response = client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                temperature=0.1,
+                max_tokens=1024
+            )
+            result = response.choices[0].message.content.strip()
+            result = result.replace('```sql', '').replace('```', '').strip()
+            return result
+        except Exception as e:
+            return f"Could not generate SQL due to LLM error: {str(e)}"
 
     def summarize_results(self, user_query: str, sql_query: str, data_result: list, api_key: str = None) -> str:
         client = Groq(api_key=api_key) if api_key else self.client
