@@ -13,7 +13,7 @@ export default function ChatDashboard() {
   const { connectionId } = useParams();
   const { getToken } = useAuth();
   const { signOut } = useClerk();
-  const { chats, activeChatId, addMessage, createNewChat, setActiveChatId, dbStatus, dbName, apiKey, setApiKey, setDbStatus, setDbName, setActiveConnectionId, activeConnectionId } = useStore();
+  const { chats, activeChatId, addMessage, createNewChat, setActiveChatId, setChats, dbStatus, dbName, apiKey, setApiKey, setDbStatus, setDbName, setActiveConnectionId, activeConnectionId } = useStore();
   const [schemaData, setSchemaData] = useState('');
   const [loadingSchema, setLoadingSchema] = useState(false);
   const [reconnecting, setReconnecting] = useState(false);
@@ -65,6 +65,26 @@ export default function ChatDashboard() {
     reconnect();
   }, [connectionId]);
 
+  // Fetch chat history for this connection
+  useEffect(() => {
+    if (!connectionId) return;
+    const fetchChats = async () => {
+      try {
+        const token = await getToken();
+        const res = await axios.get('/api/chat/conversations', {
+          params: { connection_id: connectionId },
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        setChats(res.data);
+      } catch (err) {
+        console.error('Failed to load chat history:', err);
+      }
+    };
+    if (dbStatus === 'connected' && activeConnectionId === connectionId) {
+      fetchChats();
+    }
+  }, [connectionId, dbStatus, activeConnectionId, getToken, setChats]);
+
   useEffect(() => {
     // bypass dbStatus check for now so UI can be seen
     // if (dbStatus === 'disconnected') {
@@ -86,7 +106,7 @@ export default function ChatDashboard() {
       const clerkToken = await getToken();
       const res = await axios.post(
         '/api/chat/',
-        { message: userMsg },
+        { message: userMsg, conversation_id: activeChat.id, connection_id: connectionId },
         { headers: { Authorization: `Bearer ${clerkToken}`, 'X-API-Key': apiKey || '' } }
       );
       addMessage({
@@ -153,6 +173,23 @@ export default function ChatDashboard() {
   const handleLogout = async () => {
     await signOut();
     navigate('/sign-in');
+  };
+
+  const handleDeleteChat = async (e, chatId) => {
+    e.stopPropagation();
+    if (!window.confirm('Are you sure you want to delete this chat session?')) return;
+    try {
+      const token = await getToken();
+      await axios.delete(`/api/chat/conversations/${chatId}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      
+      const updatedChats = chats.filter(c => c.id !== chatId);
+      setChats(updatedChats);
+    } catch (err) {
+      console.error('Failed to delete chat:', err);
+      alert('Failed to delete chat session. Please try again.');
+    }
   };
 
   const renderChart = (data) => {
@@ -420,12 +457,19 @@ export default function ChatDashboard() {
                   {chats.length > 0 && chats.some(c => c.messages.length > 0) ? (
                     <div className="flex flex-col gap-4">
                       {chats.filter(c => c.messages.length > 0).map((chat) => (
-                        <div key={chat.id} onClick={() => { setActiveChatId(chat.id); setActiveTab('chat'); }} className="bg-surface-container-low/60 backdrop-blur-md rounded-xl border border-white/5 p-4 flex items-center gap-4 cursor-pointer hover:bg-white/[0.05] transition-all active:scale-[0.99] group">
-                          <span className="material-symbols-outlined text-on-surface-variant group-hover:text-primary transition-colors">chat_bubble</span>
+                        <div key={chat.id} onClick={() => { setActiveChatId(chat.id); setActiveTab('chat'); }} className="bg-surface-container-low/60 backdrop-blur-md rounded-xl border border-white/5 p-4 flex items-center gap-4 cursor-pointer hover:bg-white/[0.05] transition-all active:scale-[0.99] group relative">
+                          <span className="material-symbols-outlined text-on-surface-variant group-hover:text-primary transition-colors shrink-0">chat_bubble</span>
                           <div className="flex-1 overflow-hidden">
-                            <p className="font-body-lg text-on-surface group-hover:text-primary transition-colors truncate">{chat.title}</p>
+                            <p className="font-body-lg text-on-surface group-hover:text-primary transition-colors truncate pr-8">{chat.title}</p>
                             <p className="font-body-sm text-on-surface-variant truncate text-xs mt-1">{chat.messages.length} messages</p>
                           </div>
+                          <button
+                            onClick={(e) => handleDeleteChat(e, chat.id)}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 w-8 h-8 rounded-lg flex items-center justify-center text-on-surface-variant/40 hover:text-rose-500 hover:bg-rose-500/10 opacity-0 group-hover:opacity-100 transition-all"
+                            title="Delete Chat Session"
+                          >
+                            <span className="material-symbols-outlined text-[18px]">delete</span>
+                          </button>
                         </div>
                       ))}
                     </div>
@@ -756,7 +800,7 @@ export default function ChatDashboard() {
               <div className="max-w-[860px] mx-auto pointer-events-auto">
                 <form
                   onSubmit={handleSend}
-                  className="flex items-center gap-2 p-2 rounded-2xl border border-outline backdrop-blur-xl shadow-[0_8px_40px_rgba(0,0,0,0.5)] focus-within:border-primary/40 focus-within:shadow-[0_8px_40px_rgba(0,0,0,0.5),0_0_0_1px_rgba(64,204,183,0.15)] transition-all"
+                  className="flex items-center gap-2 p-2 rounded-2xl border border-outline backdrop-blur-xl shadow-[0_8px_40px_rgba(0,0,0,0.5)] transition-all"
                   style={{ background: 'rgba(28,30,45,0.92)' }}
                 >
                   <input

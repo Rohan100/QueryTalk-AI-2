@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import { useAuth } from '@clerk/react';
 import useStore from '../store';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, ScatterChart, Scatter, ZAxis, PieChart, Pie, Cell } from 'recharts';
 
@@ -22,7 +23,8 @@ const CustomTooltip = ({ active, payload, label }) => {
 };
 
 export default function AnalyticsDashboard() {
-  const { token, dbStatus } = useStore();
+  const { getToken } = useAuth();
+  const { dbStatus } = useStore();
   const [loading, setLoading] = useState(true);
   const [fallback, setFallback] = useState(false);
   const [data, setData] = useState(null);
@@ -34,7 +36,8 @@ export default function AnalyticsDashboard() {
         return;
       }
       try {
-        const res = await axios.get('/api/db/analytics', { headers: { Authorization: `Bearer ${token}` }});
+        const clerkToken = await getToken();
+        const res = await axios.get('/api/db/analytics', { headers: { Authorization: `Bearer ${clerkToken}` }});
         if (res.data.fallback) {
           setFallback(true);
           // Load default mock data
@@ -71,7 +74,7 @@ export default function AnalyticsDashboard() {
       }
     };
     fetchAnalytics();
-  }, [token, dbStatus]);
+  }, [getToken, dbStatus]);
 
   if (loading) {
     return <div className="w-full h-full flex items-center justify-center text-primary animate-pulse">Loading Live Analytics...</div>;
