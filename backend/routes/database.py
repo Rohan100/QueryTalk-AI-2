@@ -774,20 +774,18 @@ You MUST return a JSON object with the following exact keys:
 2. "activeCustomersQuery": A SQL query that returns a single numeric count of active entities (e.g. COUNT of distinct customer IDs, or COUNT of distinct groups/categories).
 3. "monthlySalesQuery": A SQL query that returns a single numeric count of recent transactions (e.g. COUNT of orders in the last 30 days, or COUNT of records created recently).
 4. "growthPctQuery": A SQL query that returns a single numeric percentage value representing growth. If hard to calculate, return a static float.
-5. "growthDataQuery": A SQL query that returns rows with columns: "name" (string, representing month/date/category) and "current" (numeric, representing value) and "projected" (numeric). Max 12 rows.
-6. "marketShareQuery": A SQL query that returns rows with columns: "name" (string, representing segment/region/category) and "value" (numeric, representing percentage). Max 5 rows.
-7. "revenueRegionQuery": A SQL query that returns rows with columns: "name" (string, representing region/category) and "value" (numeric, representing revenue/count). Max 5 rows.
-8. "customerSegmentsQuery": A SQL query that returns rows with columns: "x" (numeric value), "y" (numeric value), "z" (numeric size value), and "group" (string or integer, representing category/segment). Max 100 rows.
+5. "growthDataQuery": A SQL query that returns rows with columns: "name_val" (string, representing month/date/category) and "current_val" (numeric, representing value) and "projected_val" (numeric). Max 12 rows.
+6. "marketShareQuery": A SQL query that returns rows with columns: "name_val" (string, representing segment/region/category) and "value_val" (numeric, representing percentage/count). Max 5 rows.
+7. "revenueRegionQuery": A SQL query that returns rows with columns: "name_val" (string, representing region/category) and "value_val" (numeric, representing revenue/count). Max 5 rows.
+8. "customerSegmentsQuery": A SQL query that returns rows with columns: "x_val" (numeric value), "y_val" (numeric value), "z_val" (numeric size value), and "group_val" (string or integer, representing category/segment). Max 100 rows.
 
 Instructions:
 - If the schema represents a sales/business/orders database, write standard business queries on the orders/sales/users tables.
-- If the schema is completely different (e.g., library, employee registry, movies), creatively map the dashboard metrics to the available tables. For example, for an employee database, totalRevenue can be the sum of salaries or count of employees, activeCustomers can be the number of departments, monthlySales can be the number of hires in the last month, growthData can be employee hiring over time, marketShare can be employee count by department, customerSegments can compare experience (x) vs salary (y).
+- If the schema is completely different (e.g., library, employee registry, movies), creatively map the dashboard metrics to the available tables. For example, for an employee database, totalRevenue can be the sum of salaries or count of employees, activeCustomers can be the number of departments, monthlySales can be the number of hires in the last month, growthData can be employee hiring over time, marketShare can be employee count by department, customerSegments can compare experience (x_val) vs salary (y_val).
 - The SQL queries must be valid for the {dialect} dialect.
 - Use simple, standard SQL features. Avoid vendor-specific complex functions.
-- IMPORTANT: To prevent reserved keyword syntax errors in dialects like Snowflake and PostgreSQL:
-  - Always double quote the select aliases for the column names exactly as: AS "current", AS "projected", AS "value", AS "group", AS "x", AS "y", AS "z".
-  - For example: SELECT col1 AS "name", col2 AS "current", col3 AS "projected" FROM ...
-  - For example: SELECT col1 AS "x", col2 AS "y", col3 AS "z", col4 AS "group" FROM ...
+- DO NOT use double quotes or backticks to quote identifiers unless absolutely necessary (for instance, to preserve spacing).
+- CRITICAL: "x_val", "y_val", and "z_val" MUST ALWAYS BE numeric columns (such as balances, salaries, ages, transaction counts, sums). NEVER map a string/text column (like market segment or names) to "x_val", "y_val", or "z_val" as this will crash the visualization.
 - Return ONLY a JSON object with the queries. Do NOT return any markdown wrapping (no ```json or ```)."""
 
     try:
@@ -854,9 +852,9 @@ Instructions:
             for row in res.fetchall():
                 row_dict = dict(zip(keys, row))
                 growth_data.append({
-                    "name": str(row_dict.get("name", "")),
-                    "current": float(row_dict.get("current") or 0),
-                    "projected": float(row_dict.get("projected") or 0) if row_dict.get("projected") is not None else float(row_dict.get("current") or 0) * 1.1
+                    "name": str(row_dict.get("name_val") or row_dict.get("name") or ""),
+                    "current": float(row_dict.get("current_val") or row_dict.get("current") or 0),
+                    "projected": float(row_dict.get("projected_val") or row_dict.get("projected") or (row_dict.get("current_val") or row_dict.get("current") or 0) * 1.1)
                 })
         except Exception as e:
             print(f"Error growthDataQuery: {e}")
@@ -870,8 +868,8 @@ Instructions:
             for idx, row in enumerate(res.fetchall()):
                 row_dict = dict(zip(keys, row))
                 market_share_data.append({
-                    "name": str(row_dict.get("name", "")),
-                    "value": float(row_dict.get("value") or 0),
+                    "name": str(row_dict.get("name_val") or row_dict.get("name") or ""),
+                    "value": float(row_dict.get("value_val") or row_dict.get("value") or 0),
                     "color": colors[idx % len(colors)]
                 })
         except Exception as e:
@@ -885,8 +883,8 @@ Instructions:
             for row in res.fetchall():
                 row_dict = dict(zip(keys, row))
                 revenue_region_data.append({
-                    "name": str(row_dict.get("name", "")),
-                    "value": float(row_dict.get("value") or 0)
+                    "name": str(row_dict.get("name_val") or row_dict.get("name") or ""),
+                    "value": float(row_dict.get("value_val") or row_dict.get("value") or 0)
                 })
         except Exception as e:
             print(f"Error revenueRegionQuery: {e}")
@@ -899,10 +897,10 @@ Instructions:
             for row in res.fetchall():
                 row_dict = dict(zip(keys, row))
                 customer_segments_data.append({
-                    "x": float(row_dict.get("x") or 0),
-                    "y": float(row_dict.get("y") or 0),
-                    "z": float(row_dict.get("z") or 200),
-                    "group": row_dict.get("group", 1)
+                    "x": float(row_dict.get("x_val") or row_dict.get("x") or 0),
+                    "y": float(row_dict.get("y_val") or row_dict.get("y") or 0),
+                    "z": float(row_dict.get("z_val") or row_dict.get("z") or 200),
+                    "group": row_dict.get("group_val") or row_dict.get("group") or "Segment"
                 })
         except Exception as e:
             print(f"Error customerSegmentsQuery: {e}")
